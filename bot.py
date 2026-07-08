@@ -61,6 +61,19 @@ HELP_TEXT = (
 )
 
 
+# Как искать инструмент на TradingView (поиск сверху, ввести этот код).
+# Подтверждено через официальные страницы контрактов TradingView.
+TERMINAL_SEARCH = {
+    "Золото": "GC1! (COMEX Gold Futures)",
+    "Серебро": "SI1! (COMEX Silver Futures)",
+    "Медь": "HG1! (COMEX Copper Futures)",
+    # для алюминия два варианта: ALI1! точно совпадает с источником данных бота
+    # (Yahoo ALI=F), но малоликвиден; AH1! — основной мировой бенчмарк (LME),
+    # цифры будут немного отличаться от того, что считает бот
+    "Алюминий": "ALI1! (COMEX, совпадает с данными бота) или AH1! (LME, более ликвидный бенчмарк)",
+}
+
+
 def format_metal_caption(name: str, z: dict) -> str:
     lines = [f"{name}: цена {z['current_price']} (диапазон {z['low']}-{z['high']})", ""]
     for ratio, level in z["levels"].items():
@@ -70,6 +83,7 @@ def format_metal_caption(name: str, z: dict) -> str:
             else ""
         )
         lines.append(f"{FIB_LABELS[ratio]}: {level}{marker}")
+    lines += ["", f"Искать в терминале: {TERMINAL_SEARCH[name]}"]
     return "\n".join(lines)
 
 
