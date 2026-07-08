@@ -37,12 +37,12 @@ def format_digest() -> str:
     results = check_all_fib_zones()
     lines = [f"Зоны интереса на {datetime.now():%d.%m.%Y}", ""]
     for metal, z in results.items():
-        nearest_label = FIB_LABELS[z["nearest_ratio"]]
-        marker = " <- в зоне" if z["near_zone"] else ""
-        lines.append(
-            f"{metal}: цена {z['current_price']} (диапазон {z['low']}-{z['high']})\n"
-            f"  ближайший уровень {nearest_label} = {z['nearest_level']}{marker}"
-        )
+        lines.append(f"{metal}: цена {z['current_price']} (диапазон {z['low']}-{z['high']})")
+        for ratio, level in z["levels"].items():
+            marker = " <- ближайший, в зоне" if ratio == z["nearest_ratio"] and z["near_zone"] else \
+                      " <- ближайший" if ratio == z["nearest_ratio"] else ""
+            lines.append(f"  {FIB_LABELS[ratio]}: {level}{marker}")
+        lines.append("")
     lines += ["", "Не финансовый совет — сырые уровни цены, решение за тобой."]
     return "\n".join(lines)
 
