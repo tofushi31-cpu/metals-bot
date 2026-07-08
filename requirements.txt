@@ -3,3 +3,5 @@ python-dotenv==1.2.2
 feedparser==6.0.11
 telethon==1.36.0
 scikit-learn==1.5.2
+yfinance==0.2.66
+pandas-ta==0.4.71b0
