@@ -7,14 +7,16 @@
 import asyncio
 import logging
 import os
+import tempfile
 from datetime import datetime, time, timedelta
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import FSInputFile, Message
 from dotenv import load_dotenv
 
-from signals import FIB_LABELS, check_all_fib_zones
+from chart import render_metal_chart
+from signals import FIB_LABELS, METALS, check_all_fib_zones
 
 load_dotenv()
 
@@ -74,11 +76,20 @@ async def cmd_help(message: Message):
     )
 
 
+async def send_digest_with_charts(chat_id: int):
+    await bot.send_message(chat_id, format_digest())
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        for name, ticker in METALS.items():
+            path = os.path.join(tmp_dir, f"{ticker.replace('=', '_')}.png")
+            render_metal_chart(name, ticker, path)
+            await bot.send_photo(chat_id, FSInputFile(path), caption=name)
+
+
 @dp.message(Command("signals"))
 async def cmd_signals(message: Message):
     if not is_admin(message.from_user.id):
         return
-    await message.answer(format_digest())
+    await send_digest_with_charts(message.chat.id)
 
 
 async def daily_digest_loop():
@@ -89,9 +100,8 @@ async def daily_digest_loop():
             target += timedelta(days=1)
         await asyncio.sleep((target - now).total_seconds())
 
-        digest = format_digest()
         for admin_id in ADMIN_IDS:
-            await bot.send_message(admin_id, digest)
+            await send_digest_with_charts(admin_id)
 
 
 async def main():

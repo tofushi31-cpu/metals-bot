@@ -5,3 +5,4 @@ telethon==1.36.0
 scikit-learn==1.5.2
 yfinance==0.2.66
 pandas-ta==0.4.71b0
+mplfinance==0.12.10b0
