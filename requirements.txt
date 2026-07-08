@@ -1,0 +1,5 @@
+aiogram==3.29.1
+python-dotenv==1.2.2
+feedparser==6.0.11
+telethon==1.36.0
+scikit-learn==1.5.2
