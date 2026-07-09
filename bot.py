@@ -11,7 +11,7 @@ import tempfile
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import (
@@ -19,14 +19,23 @@ from aiogram.types import (
     FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    LabeledPrice,
     Message,
+    PreCheckoutQuery,
 )
 from dotenv import load_dotenv
 
+import sheets
 from captions import format_metal_caption, format_zone_alert
 from chart import render_chart
-from history import record_alert, was_alerted_today
-from signals import METALS, compute_fib_zones, fetch_prices
+from history import (
+    active_subscribers,
+    add_subscription,
+    is_subscriber,
+    record_alert,
+    was_alerted_today,
+)
+from signals import FIB_LABELS, METALS, compute_fib_zones, fetch_prices
 
 load_dotenv()
 
@@ -35,6 +44,8 @@ ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()}
 DIGEST_HOUR = int(os.getenv("DIGEST_HOUR", "9"))  # во сколько присылать ежедневный дайджест
 DIGEST_TZ = ZoneInfo(os.getenv("DIGEST_TZ", "Asia/Almaty"))  # таймзона дайджеста
 ALERT_INTERVAL_MIN = int(os.getenv("ALERT_INTERVAL_MIN", "30"))  # как часто проверять зоны
+STARS_PRICE = int(os.getenv("STARS_PRICE", "100"))  # цена подписки в Telegram Stars
+SUB_DAYS = int(os.getenv("SUB_DAYS", "30"))  # длительность подписки в днях
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
@@ -43,6 +54,15 @@ dp = Dispatcher()
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
+
+
+def has_access(user_id: int) -> bool:
+    return is_admin(user_id) or is_subscriber(user_id)
+
+
+def recipients() -> set[int]:
+    """Кому слать дайджест и алерты: админы + активные подписчики."""
+    return ADMIN_IDS | set(active_subscribers())
 
 
 async def ack(callback: CallbackQuery, text: str | None = None):
@@ -100,29 +120,80 @@ async def send_all_metals(chat_id: int):
         await send_metal(chat_id, name)
 
 
+subscribe_menu = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text=f"⭐ Подписка — {STARS_PRICE} Stars / {SUB_DAYS} дней", callback_data="subscribe")],
+        [InlineKeyboardButton(text="❓ Что я получу", callback_data="help")],
+    ]
+)
+
+INSTRUMENTS_TEXT = "золотом, серебром, медью, алюминием и нефтью Brent"
+
+
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
-    if not is_admin(message.from_user.id):
-        return
+    if has_access(message.from_user.id):
+        await message.answer(
+            f"Слежу за {INSTRUMENTS_TEXT}.\n\n"
+            f"Присылаю дайджест каждый день около {DIGEST_HOUR}:00 и алерты, "
+            "когда цена входит в зону Фибоначчи.\n\n"
+            "Выбери, что показать:",
+            reply_markup=main_menu,
+        )
+    else:
+        await message.answer(
+            f"Слежу за {INSTRUMENTS_TEXT}: свечные графики с уровнями Фибоначчи, "
+            "ежедневный дайджест и алерты, когда цена входит в зону интереса.\n\n"
+            "Не финансовый совет — сырые уровни цены.\n\n"
+            "Доступ по подписке:",
+            reply_markup=subscribe_menu,
+        )
+
+
+@dp.callback_query(lambda c: c.data == "subscribe")
+async def cb_subscribe(callback: CallbackQuery):
+    await ack(callback)
+    await bot.send_invoice(
+        chat_id=callback.message.chat.id,
+        title="Подписка на зоны Фибоначчи",
+        description=(
+            f"Дайджест и алерты по {INSTRUMENTS_TEXT} на {SUB_DAYS} дней. "
+            "Не финансовый совет."
+        ),
+        payload="fib-subscription",
+        currency="XTR",  # Telegram Stars, платёжный провайдер не нужен
+        prices=[LabeledPrice(label=f"Подписка {SUB_DAYS} дней", amount=STARS_PRICE)],
+    )
+
+
+@dp.pre_checkout_query()
+async def pre_checkout(query: PreCheckoutQuery):
+    await query.answer(ok=True)
+
+
+@dp.message(F.successful_payment)
+async def on_payment(message: Message):
+    expires = add_subscription(message.from_user.id, SUB_DAYS)
+    logging.info(
+        "Оплата: user=%s, %s XTR, подписка до %s",
+        message.from_user.id, message.successful_payment.total_amount, expires,
+    )
     await message.answer(
-        "Слежу за золотом, серебром, медью и алюминием.\n\n"
-        f"Плюс присылаю дайджест сам каждый день около {DIGEST_HOUR}:00.\n\n"
-        "Выбери, что показать:",
+        f"Спасибо! Подписка активна до {expires[:10]}.\n\n"
+        "Теперь тебе доступны графики, дайджест и алерты:",
         reply_markup=main_menu,
     )
 
 
 @dp.callback_query(lambda c: c.data == "help")
 async def cb_help(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        return
     await callback.message.answer(HELP_TEXT)
     await ack(callback)
 
 
 @dp.callback_query(lambda c: c.data == "metal:all")
 async def cb_metal_all(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
+    if not has_access(callback.from_user.id):
         return
     await ack(callback, "Собираю графики...")
     await send_all_metals(callback.message.chat.id)
@@ -130,7 +201,7 @@ async def cb_metal_all(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data.startswith("metal:"))
 async def cb_metal_one(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
+    if not has_access(callback.from_user.id):
         return
     name = callback.data.split(":", 1)[1]
     if name not in METALS:
@@ -147,11 +218,11 @@ async def daily_digest_loop():
             target += timedelta(days=1)
         await asyncio.sleep((target - now).total_seconds())
 
-        for admin_id in ADMIN_IDS:
+        for chat_id in recipients():
             try:
-                await send_all_metals(admin_id)
+                await send_all_metals(chat_id)
             except Exception:
-                logging.exception("Дайджест для %s не отправился", admin_id)
+                logging.exception("Дайджест для %s не отправился", chat_id)
 
 
 async def zone_alert_loop():
@@ -168,11 +239,18 @@ async def zone_alert_loop():
             if not zones["near_zone"] or was_alerted_today(name, zones["nearest_ratio"]):
                 continue
             record_alert(name, zones["nearest_ratio"], zones["current_price"])
-            for admin_id in ADMIN_IDS:
+            await asyncio.to_thread(
+                sheets.export_alert,
+                name,
+                FIB_LABELS[zones["nearest_ratio"]],
+                zones["nearest_level"],
+                zones["current_price"],
+            )
+            for chat_id in recipients():
                 try:
-                    await bot.send_message(admin_id, format_zone_alert(name, zones))
+                    await bot.send_message(chat_id, format_zone_alert(name, zones))
                 except Exception:
-                    logging.exception("Алерт %s для %s не отправился", name, admin_id)
+                    logging.exception("Алерт %s для %s не отправился", name, chat_id)
         await asyncio.sleep(ALERT_INTERVAL_MIN * 60)
 
 

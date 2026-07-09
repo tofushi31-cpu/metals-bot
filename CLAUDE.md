@@ -20,15 +20,16 @@ Test config is in `pytest.ini` (`pythonpath = .`, `asyncio_mode = auto`, `testpa
 
 ## Architecture
 
-Telegram-бот с графиками металлов (золото GC=F, серебро SI=F, медь HG=F, алюминий ALI=F):
+Telegram-бот с графиками сырьевых инструментов (золото GC=F, серебро SI=F, медь HG=F, алюминий ALI=F, нефть Brent BZ=F; словарь исторически называется `METALS`):
 
 - `signals.py` — `METALS`, `fetch_prices` (yfinance, с ретраями, пустой ответ = ошибка), `compute_fib_zones` (уровни Фибоначчи по свингу 60 дней), `FIB_LABELS`
 - `chart.py` — `render_chart(df, zones, name, path)`: свечи + уровни Фибоначчи + панель RSI → PNG (mplfinance). Данные принимает готовыми — сам ничего не скачивает
 - `captions.py` — тексты подписей и алертов (отдельно от bot.py, чтобы тестировать без токена)
-- `history.py` — SQLite `metals.db` (путь переопределяется env `METALS_DB`): дедупликация алертов (один на металл+уровень в день) и история для будущей статистики
-- `bot.py` — aiogram, только для `ADMIN_IDS`; меню (строится динамически из `METALS`), ежедневный дайджест в `DIGEST_HOUR` по `DIGEST_TZ` (zoneinfo), алерт-цикл раз в `ALERT_INTERVAL_MIN` минут при входе цены в зону
+- `history.py` — SQLite `metals.db` (путь переопределяется env `METALS_DB`): дедупликация алертов (один на инструмент+уровень в день), история для статистики, подписчики (user_id, expires_at)
+- `sheets.py` — опциональная выгрузка алертов в Google-таблицу (gspread + сервисный аккаунт; выключено, пока не заданы `GSHEET_CREDS`/`GSHEET_ID`)
+- `bot.py` — aiogram; доступ у `ADMIN_IDS` и активных подписчиков (оплата Telegram Stars, currency XTR, без платёжного провайдера); меню (строится динамически из `METALS`), ежедневный дайджест в `DIGEST_HOUR` по `DIGEST_TZ` (zoneinfo), алерт-цикл раз в `ALERT_INTERVAL_MIN` минут при входе цены в зону
 
-Секреты и настройки — `.env` (`BOT_TOKEN`, `ADMIN_IDS`, `DIGEST_HOUR`, `DIGEST_TZ`, `ALERT_INTERVAL_MIN`).
+Секреты и настройки — `.env` (`BOT_TOKEN`, `ADMIN_IDS`, `DIGEST_HOUR`, `DIGEST_TZ`, `ALERT_INTERVAL_MIN`, `STARS_PRICE`, `SUB_DAYS`, `GSHEET_CREDS`, `GSHEET_ID`).
 
 Автозапуск на macOS: LaunchAgent `deploy/com.roger.metals-bot.plist` (KeepAlive).
 

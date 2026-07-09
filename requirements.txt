@@ -3,3 +3,4 @@ python-dotenv==1.2.2
 yfinance==0.2.66
 pandas-ta==0.4.71b0
 mplfinance==0.12.10b0
+gspread==6.1.4

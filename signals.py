@@ -17,11 +17,14 @@ import yfinance as yf
 
 log = logging.getLogger(__name__)
 
+# Исторически словарь называется METALS, но с добавлением нефти это просто
+# "отслеживаемые инструменты" — все тикеры Yahoo Finance
 METALS = {
     "Золото": "GC=F",
     "Серебро": "SI=F",
     "Медь": "HG=F",
     "Алюминий": "ALI=F",
+    "Нефть Brent": "BZ=F",
 }
 
 FETCH_RETRIES = 3
