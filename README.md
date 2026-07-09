@@ -4,14 +4,21 @@
 
 Не финансовый совет — сырые уровни цены, решение принимает человек. Отвечает только админам (`ADMIN_IDS`).
 
+![Пример графика](docs/chart-example.png)
+
+Плюс алерты в реальном времени: раз в `ALERT_INTERVAL_MIN` минут (по умолчанию 30) бот проверяет цены и присылает сообщение, когда цена входит в зону Фибоначчи (ближе 1% к уровню). Один алерт на металл+уровень в день, история — в SQLite `metals.db` (для будущей статистики отработки зон).
+
 ```
 yfinance (Yahoo, бесплатно)
         |
-   signals.py ── fetch_prices + compute_fib_zones
+   signals.py ── fetch_prices (ретраи) + compute_fib_zones
         |
    chart.py ──── свечи + Фибоначчи + RSI → PNG (mplfinance)
+   captions.py ─ текст подписей и алертов
         |
-   bot.py ────── aiogram: меню, /start, дайджест в DIGEST_HOUR (DIGEST_TZ)
+   bot.py ────── aiogram: меню, дайджест (DIGEST_HOUR, DIGEST_TZ),
+        |         алерт-цикл (ALERT_INTERVAL_MIN)
+   history.py ── SQLite metals.db: дедупликация и история алертов
 ```
 
 ## Запуск
@@ -24,6 +31,8 @@ python3 bot.py
 ```
 
 Тесты: `pytest`.
+
+Docker (для сервера): `docker compose up -d --build` — рестарт автоматический, база алертов в `./data/`.
 
 Автозапуск на macOS — LaunchAgent `com.roger.metals-bot.plist` (см. `deploy/`), поднимает бота после перезагрузки и падений. Лог — `~/Library/Logs/metals-bot.log` (в папку Desktop launchd писать не может из-за TCC-защиты macOS).
 

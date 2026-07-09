@@ -1,0 +1,9 @@
+services:
+  metals-bot:
+    build: .
+    env_file: .env
+    restart: always
+    volumes:
+      - ./data:/app/data
+    environment:
+      - METALS_DB=/app/data/metals.db

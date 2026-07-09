@@ -23,8 +23,10 @@ from aiogram.types import (
 )
 from dotenv import load_dotenv
 
+from captions import format_metal_caption, format_zone_alert
 from chart import render_chart
-from signals import FIB_LABELS, METALS, compute_fib_zones, fetch_prices
+from history import record_alert, was_alerted_today
+from signals import METALS, compute_fib_zones, fetch_prices
 
 load_dotenv()
 
@@ -32,6 +34,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()}
 DIGEST_HOUR = int(os.getenv("DIGEST_HOUR", "9"))  # во сколько присылать ежедневный дайджест
 DIGEST_TZ = ZoneInfo(os.getenv("DIGEST_TZ", "Asia/Almaty"))  # таймзона дайджеста
+ALERT_INTERVAL_MIN = int(os.getenv("ALERT_INTERVAL_MIN", "30"))  # как часто проверять зоны
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
@@ -51,10 +54,12 @@ async def ack(callback: CallbackQuery, text: str | None = None):
         pass
 
 
+_metal_buttons = [
+    InlineKeyboardButton(text=name, callback_data=f"metal:{name}") for name in METALS
+]
 main_menu = InlineKeyboardMarkup(
     inline_keyboard=[
-        [InlineKeyboardButton(text=name, callback_data=f"metal:{name}") for name in METALS][:2],
-        [InlineKeyboardButton(text=name, callback_data=f"metal:{name}") for name in METALS][2:],
+        *[_metal_buttons[i : i + 2] for i in range(0, len(_metal_buttons), 2)],
         [InlineKeyboardButton(text="📊 Все металлы", callback_data="metal:all")],
         [InlineKeyboardButton(text="❓ Помощь", callback_data="help")],
     ]
@@ -71,32 +76,6 @@ HELP_TEXT = (
     "входа или выхода.\n\n"
     "Это просто уровни цены, не рекомендация покупать/продавать."
 )
-
-
-# Как искать инструмент на TradingView (поиск сверху, ввести этот код).
-# Подтверждено через официальные страницы контрактов TradingView.
-TERMINAL_SEARCH = {
-    "Золото": "GC1! (COMEX Gold Futures)",
-    "Серебро": "SI1! (COMEX Silver Futures)",
-    "Медь": "HG1! (COMEX Copper Futures)",
-    # для алюминия два варианта: ALI1! точно совпадает с источником данных бота
-    # (Yahoo ALI=F), но малоликвиден; AH1! — основной мировой бенчмарк (LME),
-    # цифры будут немного отличаться от того, что считает бот
-    "Алюминий": "ALI1! (COMEX, совпадает с данными бота) или AH1! (LME, более ликвидный бенчмарк)",
-}
-
-
-def format_metal_caption(name: str, z: dict) -> str:
-    lines = [f"{name}: цена {z['current_price']} (диапазон {z['low']}-{z['high']})", ""]
-    for ratio, level in z["levels"].items():
-        marker = (
-            " <- ближайший, в зоне" if ratio == z["nearest_ratio"] and z["near_zone"]
-            else " <- ближайший" if ratio == z["nearest_ratio"]
-            else ""
-        )
-        lines.append(f"{FIB_LABELS[ratio]}: {level}{marker}")
-    lines += ["", f"Искать в терминале: {TERMINAL_SEARCH[name]}"]
-    return "\n".join(lines)
 
 
 async def send_metal(chat_id: int, name: str):
@@ -175,8 +154,31 @@ async def daily_digest_loop():
                 logging.exception("Дайджест для %s не отправился", admin_id)
 
 
+async def zone_alert_loop():
+    """Каждые ALERT_INTERVAL_MIN минут проверяет, не вошла ли цена в зону Фибоначчи.
+    Один алерт на металл+уровень в день (дедупликация в metals.db)."""
+    while True:
+        for name, ticker in METALS.items():
+            try:
+                df = await asyncio.to_thread(fetch_prices, ticker)
+            except Exception:
+                logging.exception("Алерт-проверка %s: данные недоступны", name)
+                continue
+            zones = compute_fib_zones(df)
+            if not zones["near_zone"] or was_alerted_today(name, zones["nearest_ratio"]):
+                continue
+            record_alert(name, zones["nearest_ratio"], zones["current_price"])
+            for admin_id in ADMIN_IDS:
+                try:
+                    await bot.send_message(admin_id, format_zone_alert(name, zones))
+                except Exception:
+                    logging.exception("Алерт %s для %s не отправился", name, admin_id)
+        await asyncio.sleep(ALERT_INTERVAL_MIN * 60)
+
+
 async def main():
     asyncio.create_task(daily_digest_loop())
+    asyncio.create_task(zone_alert_loop())
     await dp.start_polling(bot)
 
 
