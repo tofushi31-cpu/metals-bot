@@ -9,8 +9,10 @@ import logging
 import os
 import tempfile
 from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery,
@@ -21,14 +23,15 @@ from aiogram.types import (
 )
 from dotenv import load_dotenv
 
-from chart import render_metal_chart
+from chart import render_chart
 from signals import FIB_LABELS, METALS, compute_fib_zones, fetch_prices
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()}
-DIGEST_HOUR = int(os.getenv("DIGEST_HOUR", "9"))  # во сколько присылать ежедневный дайджест, локальное время сервера
+DIGEST_HOUR = int(os.getenv("DIGEST_HOUR", "9"))  # во сколько присылать ежедневный дайджест
+DIGEST_TZ = ZoneInfo(os.getenv("DIGEST_TZ", "Asia/Almaty"))  # таймзона дайджеста
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
@@ -37,6 +40,15 @@ dp = Dispatcher()
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
+
+
+async def ack(callback: CallbackQuery, text: str | None = None):
+    """Ответ на callback; после рестарта бота query может протухнуть (>48с) —
+    это не повод не отправлять сам график."""
+    try:
+        await callback.answer(text)
+    except TelegramBadRequest:
+        pass
 
 
 main_menu = InlineKeyboardMarkup(
@@ -89,11 +101,16 @@ def format_metal_caption(name: str, z: dict) -> str:
 
 async def send_metal(chat_id: int, name: str):
     ticker = METALS[name]
-    df = fetch_prices(ticker)
+    try:
+        df = await asyncio.to_thread(fetch_prices, ticker)
+    except Exception:
+        logging.exception("Не удалось получить данные для %s", name)
+        await bot.send_message(chat_id, f"{name}: данные сейчас недоступны, попробуй позже.")
+        return
     zones = compute_fib_zones(df)
     with tempfile.TemporaryDirectory() as tmp_dir:
         path = os.path.join(tmp_dir, "chart.png")
-        render_metal_chart(name, ticker, path)
+        render_chart(df, zones, name, path)
         await bot.send_photo(
             chat_id, FSInputFile(path), caption=format_metal_caption(name, zones)
         )
@@ -121,14 +138,14 @@ async def cb_help(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         return
     await callback.message.answer(HELP_TEXT)
-    await callback.answer()
+    await ack(callback)
 
 
 @dp.callback_query(lambda c: c.data == "metal:all")
 async def cb_metal_all(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         return
-    await callback.answer("Собираю графики...")
+    await ack(callback, "Собираю графики...")
     await send_all_metals(callback.message.chat.id)
 
 
@@ -139,20 +156,23 @@ async def cb_metal_one(callback: CallbackQuery):
     name = callback.data.split(":", 1)[1]
     if name not in METALS:
         return
-    await callback.answer("Собираю график...")
+    await ack(callback, "Собираю график...")
     await send_metal(callback.message.chat.id, name)
 
 
 async def daily_digest_loop():
     while True:
-        now = datetime.now()
-        target = datetime.combine(now.date(), time(hour=DIGEST_HOUR))
+        now = datetime.now(DIGEST_TZ)
+        target = datetime.combine(now.date(), time(hour=DIGEST_HOUR), tzinfo=DIGEST_TZ)
         if now >= target:
             target += timedelta(days=1)
         await asyncio.sleep((target - now).total_seconds())
 
         for admin_id in ADMIN_IDS:
-            await send_all_metals(admin_id)
+            try:
+                await send_all_metals(admin_id)
+            except Exception:
+                logging.exception("Дайджест для %s не отправился", admin_id)
 
 
 async def main():

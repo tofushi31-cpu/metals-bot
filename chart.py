@@ -1,13 +1,12 @@
 """Свечной график с зонами Фибоначчи и RSI — рендерится в PNG для отправки в Telegram.
 
-Бесплатно, без TradingView: mplfinance поверх тех же данных yfinance/pandas-ta,
+Бесплатно, без TradingView: mplfinance поверх тех же данных yfinance,
 что использует signals.py.
 """
 
 import pandas as pd
+import pandas_ta  # noqa: F401 — регистрирует аксессор df.ta
 import mplfinance as mpf
-
-from signals import FIB_LABELS, compute_fib_zones, fetch_prices
 
 GOLDEN_RATIO = 0.618
 
@@ -38,9 +37,3 @@ def render_chart(df: pd.DataFrame, zones: dict, metal_name: str, out_path: str) 
         savefig=out_path,
     )
     return out_path
-
-
-def render_metal_chart(metal_name: str, ticker: str, out_path: str) -> str:
-    df = fetch_prices(ticker)
-    zones = compute_fib_zones(df)
-    return render_chart(df, zones, metal_name, out_path)

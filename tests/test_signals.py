@@ -1,6 +1,6 @@
 import pandas as pd
 
-from signals import compute_fib_zones, compute_signal
+from signals import compute_fib_zones
 
 
 def _fake_ohlc(n=60, start=100.0, step=0.3):
@@ -16,23 +16,6 @@ def _fake_ohlc(n=60, start=100.0, step=0.3):
         },
         index=dates,
     )
-
-
-def test_compute_signal_uptrend_gives_bullish_macd():
-    df = _fake_ohlc()
-    signal = compute_signal(df)
-
-    assert "rsi" in signal
-    assert signal["rsi_note"] in {"перекуплен", "перепродан", "нейтрально"}
-    assert signal["macd_note"] == "бычье пересечение"
-
-
-def test_compute_signal_overbought_rsi_on_strong_uptrend():
-    df = _fake_ohlc(step=2.0)
-    signal = compute_signal(df)
-
-    assert signal["rsi"] >= 70
-    assert signal["rsi_note"] == "перекуплен"
 
 
 def test_compute_fib_zones_levels_between_low_and_high():

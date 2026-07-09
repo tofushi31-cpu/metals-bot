@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# setup
-python3 -m venv venv && source venv/bin/activate
+# setup — строго python3.12: pandas-ta тянет numba, который не работает на 3.14
+python3.12 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 
 # run the bot
@@ -20,14 +20,18 @@ Test config is in `pytest.ini` (`pythonpath = .`, `asyncio_mode = auto`, `testpa
 
 ## Architecture
 
-Flat module layout, mirrors the sibling `turist-bot` project:
+Telegram-бот с графиками металлов (золото GC=F, серебро SI=F, медь HG=F, алюминий ALI=F):
 
-- `config.py` — `RSS_FEEDS` / `TELEGRAM_CHANNELS` lists, must be filled in before collectors do anything
-- `db.py` — SQLite (`radar.db`), single `items` table (source, text, url, published_at)
-- `collector_rss.py` / `collector_telegram.py` — pull raw posts into `items`. Not implemented yet — deliberately, no point writing parsing logic against feeds/channels that aren't chosen yet
-- `analysis.py` — Phase 1 (no paid LLM): TF-IDF keyword extraction + regex pain-point markers ("не хватает", "нужен сервис для", ...) + week-over-week frequency. Optional Phase 2: local LLM via Ollama for actual summarization, once Phase 1 pipeline is proven on real data
-- `bot.py` — aiogram entry point, sends the digest
+- `signals.py` — `METALS`, `fetch_prices` (yfinance, с ретраями, пустой ответ = ошибка), `compute_fib_zones` (уровни Фибоначчи по свингу 60 дней), `FIB_LABELS`
+- `chart.py` — `render_chart(df, zones, name, path)`: свечи + уровни Фибоначчи + панель RSI → PNG (mplfinance). Данные принимает готовыми — сам ничего не скачивает
+- `bot.py` — aiogram, только для `ADMIN_IDS`; меню с кнопками по металлам, ежедневный дайджест в `DIGEST_HOUR` по `DIGEST_TZ` (zoneinfo)
 
-Full plan and time estimates: `tmp/plans/radar-potrebnostey.md` in the Teach repo, mirrored in the Obsidian vault (`Проекты/Радар потребностей (портфолио 2)/План.md`).
+Секреты и настройки — `.env` (`BOT_TOKEN`, `ADMIN_IDS`, `DIGEST_HOUR`, `DIGEST_TZ`).
 
-**No paid Claude/Anthropic API** — same constraint as `turist-bot`'s content generation. Keep `analysis.py` free/local (regex + TF-IDF, or a local Ollama model), never call a paid API without explicit sign-off.
+Автозапуск на macOS: LaunchAgent `deploy/com.roger.metals-bot.plist` (KeepAlive).
+
+## Constraints
+
+- **Без платных API** — данные yfinance (бесплатно), индикаторы локально; никогда не подключать платный API без явного согласия.
+- Без TradingView-данных: их ToS запрещает прямой сбор; в подписи бота даются лишь подсказки, как найти инструмент в терминале (`TERMINAL_SEARCH` в `bot.py`).
+- Прошлая концепция «радар потребностей» заморожена и живёт в `../radar-idey/ПЛАН.md` — не восстанавливать её код здесь.
