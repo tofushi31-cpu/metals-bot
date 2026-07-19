@@ -1,6 +1,7 @@
 import pandas as pd
 
-from signals import compute_fib_zones
+import signals
+from signals import close_price_after, compute_fib_zones, compute_indicators, fetch_prices
 
 
 def _fake_ohlc(n=60, start=100.0, step=0.3):
@@ -36,3 +37,55 @@ def test_compute_fib_zones_detects_near_zone_at_golden_ratio():
 
     assert zones["nearest_ratio"] == 0.618
     assert zones["near_zone"] is True
+
+
+def test_fetch_prices_uses_cache_within_ttl(monkeypatch):
+    calls = []
+
+    def fake_download(ticker, **kwargs):
+        calls.append(ticker)
+        return _fake_ohlc()
+
+    monkeypatch.setattr(signals.yf, "download", fake_download)
+    signals._price_cache.clear()
+
+    first = fetch_prices("GC=F")
+    second = fetch_prices("GC=F")
+
+    assert len(calls) == 1  # второй вызов — из кэша, без похода в Yahoo
+    pd.testing.assert_frame_equal(first, second)
+
+    fetch_prices("SI=F")
+    assert len(calls) == 2  # другой инструмент кэшируется отдельно
+
+
+def test_fetch_prices_cache_expires(monkeypatch):
+    calls = []
+
+    def fake_download(ticker, **kwargs):
+        calls.append(ticker)
+        return _fake_ohlc()
+
+    monkeypatch.setattr(signals.yf, "download", fake_download)
+    monkeypatch.setenv("CACHE_TTL_MINUTES", "0")
+    signals._price_cache.clear()
+
+    fetch_prices("GC=F")
+    fetch_prices("GC=F")
+
+    assert len(calls) == 2  # TTL 0 — кэш сразу протухает
+
+
+def test_compute_indicators_returns_rsi_and_atr():
+    ind = compute_indicators(_fake_ohlc())
+
+    assert ind["rsi"] is not None and 0 <= ind["rsi"] <= 100
+    assert ind["atr"] is not None and ind["atr"] > 0
+
+
+def test_close_price_after():
+    df = _fake_ohlc()  # свечи с 2026-01-01, шаг 0.3 в день от 100.0
+
+    assert close_price_after(df, "2026-01-01", 3) == round(100.0 + 3 * 0.3, 2)
+    # горизонт за пределами истории — результата ещё нет
+    assert close_price_after(df, "2026-02-25", 7) is None

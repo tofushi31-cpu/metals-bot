@@ -35,3 +35,29 @@ def format_zone_alert(name: str, z: dict) -> str:
         f"{FIB_LABELS[z['nearest_ratio']]} (уровень {z['nearest_level']}).\n"
         f"Диапазон свинга: {z['low']}-{z['high']}. Не финансовый совет."
     )
+
+
+def _fmt_pct(value: float | None) -> str:
+    return "—" if value is None else f"{value:+.1f}%"
+
+
+def format_stats(rows: list[dict]) -> str:
+    """Сводка /stats: среднее движение цены после входа в зону. Честно про малую
+    выборку — выводы по паре сигналов делать нельзя."""
+    if not rows:
+        return (
+            "Статистика пока пустая: она копится с каждым алертом.\n"
+            "Загляни через несколько недель."
+        )
+    lines = ["Средний ход цены после входа в зону (за 1д / 3д / 7д):", ""]
+    for r in rows:
+        lines.append(
+            f"{r['metal']} {FIB_LABELS[r['ratio']]}: сигналов {r['signals']}, "
+            f"{_fmt_pct(r['avg_1d'])} / {_fmt_pct(r['avg_3d'])} / {_fmt_pct(r['avg_7d'])}"
+        )
+    lines += [
+        "",
+        "Это не вероятность успеха, а среднее движение цены. "
+        "Пока сигналов мало, цифры шумные. Не финансовый совет.",
+    ]
+    return "\n".join(lines)

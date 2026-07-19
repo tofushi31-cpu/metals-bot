@@ -8,6 +8,20 @@ from pathlib import Path
 
 DB_PATH = Path(os.getenv("METALS_DB", Path(__file__).parent / "metals.db"))
 
+# Горизонты дозаписи результатов: через сколько дней после алерта фиксируем цену
+OUTCOME_HORIZONS = (1, 3, 7)
+
+# Контекст сигнала и результаты — колонки добавляются к старым базам на лету
+_ALERT_EXTRA_COLUMNS = {
+    "timeframe": "TEXT",  # пока всегда 'D' — бот работает на дневных свечах
+    "rsi": "REAL",
+    "atr": "REAL",
+    "algo_version": "INTEGER",
+    "price_1d": "REAL",
+    "price_3d": "REAL",
+    "price_7d": "REAL",
+}
+
 
 def _conn(db_path=DB_PATH):
     conn = sqlite3.connect(db_path)
@@ -21,6 +35,10 @@ def _conn(db_path=DB_PATH):
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )"""
     )
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(alerts)")}
+    for column, col_type in _ALERT_EXTRA_COLUMNS.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE alerts ADD COLUMN {column} {col_type}")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS subscribers (
             user_id INTEGER PRIMARY KEY,
@@ -39,12 +57,76 @@ def was_alerted_today(metal: str, ratio: float, db_path=DB_PATH) -> bool:
     return row is not None
 
 
-def record_alert(metal: str, ratio: float, price: float, db_path=DB_PATH):
+def record_alert(
+    metal: str,
+    ratio: float,
+    price: float,
+    rsi: float | None = None,
+    atr: float | None = None,
+    algo_version: int | None = None,
+    db_path=DB_PATH,
+):
     with _conn(db_path) as conn:
         conn.execute(
-            "INSERT INTO alerts (metal, ratio, price, day) VALUES (?, ?, ?, ?)",
-            (metal, ratio, price, date.today().isoformat()),
+            "INSERT INTO alerts (metal, ratio, price, day, timeframe, rsi, atr, algo_version) "
+            "VALUES (?, ?, ?, ?, 'D', ?, ?, ?)",
+            (metal, ratio, price, date.today().isoformat(), rsi, atr, algo_version),
         )
+
+
+def alerts_missing_outcomes(metal: str, db_path=DB_PATH) -> list[dict]:
+    """Алерты этого инструмента, у которых ещё не записана цена хотя бы по
+    одному горизонту (1/3/7 дней)."""
+    with _conn(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, day, price_1d, price_3d, price_7d FROM alerts "
+            "WHERE metal = ? AND (price_1d IS NULL OR price_3d IS NULL OR price_7d IS NULL)",
+            (metal,),
+        ).fetchall()
+    return [
+        {
+            "id": r[0],
+            "day": r[1],
+            "missing": [h for h, v in zip(OUTCOME_HORIZONS, r[2:]) if v is None],
+        }
+        for r in rows
+    ]
+
+
+def record_outcome(alert_id: int, horizon_days: int, price: float, db_path=DB_PATH):
+    if horizon_days not in OUTCOME_HORIZONS:
+        raise ValueError(f"неизвестный горизонт: {horizon_days}")
+    with _conn(db_path) as conn:
+        conn.execute(
+            f"UPDATE alerts SET price_{horizon_days}d = ? WHERE id = ?",
+            (price, alert_id),
+        )
+
+
+def level_stats(db_path=DB_PATH) -> list[dict]:
+    """Сводка по инструменту+уровню: сколько сигналов и среднее движение цены
+    через 1/3/7 дней (в % от цены сигнала). Для /stats."""
+    with _conn(db_path) as conn:
+        rows = conn.execute(
+            "SELECT metal, ratio, COUNT(*), "
+            "AVG((price_1d - price) / price * 100), "
+            "AVG((price_3d - price) / price * 100), "
+            "AVG((price_7d - price) / price * 100), "
+            "COUNT(price_7d) "
+            "FROM alerts GROUP BY metal, ratio ORDER BY metal, ratio"
+        ).fetchall()
+    return [
+        {
+            "metal": r[0],
+            "ratio": r[1],
+            "signals": r[2],
+            "avg_1d": r[3],
+            "avg_3d": r[4],
+            "avg_7d": r[5],
+            "with_7d": r[6],
+        }
+        for r in rows
+    ]
 
 
 def add_subscription(user_id: int, days: int, db_path=DB_PATH) -> str:

@@ -26,16 +26,27 @@ from aiogram.types import (
 from dotenv import load_dotenv
 
 import sheets
-from captions import format_metal_caption, format_zone_alert
+from captions import format_metal_caption, format_stats, format_zone_alert
 from chart import render_chart
 from history import (
     active_subscribers,
     add_subscription,
+    alerts_missing_outcomes,
     is_subscriber,
+    level_stats,
     record_alert,
+    record_outcome,
     was_alerted_today,
 )
-from signals import FIB_LABELS, METALS, compute_fib_zones, fetch_prices
+from signals import (
+    ALGO_VERSION,
+    FIB_LABELS,
+    METALS,
+    close_price_after,
+    compute_fib_zones,
+    compute_indicators,
+    fetch_prices,
+)
 
 load_dotenv()
 
@@ -210,6 +221,37 @@ async def cb_metal_one(callback: CallbackQuery):
     await send_metal(callback.message.chat.id, name)
 
 
+@dp.message(Command("stats"))
+async def cmd_stats(message: Message):
+    if not has_access(message.from_user.id):
+        return
+    stats = await asyncio.to_thread(level_stats)
+    await message.answer(format_stats(stats))
+
+
+async def outcome_backfill_loop():
+    """Раз в сутки дописывает к старым алертам цену через 1/3/7 дней —
+    из этого копится статистика отработки уровней (/stats)."""
+    while True:
+        for name, ticker in METALS.items():
+            pending = await asyncio.to_thread(alerts_missing_outcomes, name)
+            if not pending:
+                continue
+            try:
+                df = await asyncio.to_thread(fetch_prices, ticker)
+            except Exception:
+                logging.exception("Дозапись результатов %s: данные недоступны", name)
+                continue
+            for alert in pending:
+                for horizon in alert["missing"]:
+                    price = close_price_after(df, alert["day"], horizon)
+                    if price is not None:
+                        await asyncio.to_thread(
+                            record_outcome, alert["id"], horizon, price
+                        )
+        await asyncio.sleep(24 * 60 * 60)
+
+
 async def daily_digest_loop():
     while True:
         now = datetime.now(DIGEST_TZ)
@@ -238,7 +280,15 @@ async def zone_alert_loop():
             zones = compute_fib_zones(df)
             if not zones["near_zone"] or was_alerted_today(name, zones["nearest_ratio"]):
                 continue
-            record_alert(name, zones["nearest_ratio"], zones["current_price"])
+            indicators = compute_indicators(df)
+            record_alert(
+                name,
+                zones["nearest_ratio"],
+                zones["current_price"],
+                rsi=indicators["rsi"],
+                atr=indicators["atr"],
+                algo_version=ALGO_VERSION,
+            )
             await asyncio.to_thread(
                 sheets.export_alert,
                 name,
@@ -257,6 +307,7 @@ async def zone_alert_loop():
 async def main():
     asyncio.create_task(daily_digest_loop())
     asyncio.create_task(zone_alert_loop())
+    asyncio.create_task(outcome_backfill_loop())
     await dp.start_polling(bot)
 
 
