@@ -138,6 +138,50 @@ HELP_TEXT = (
     "Это просто уровни цены, не рекомендация покупать/продавать."
 )
 
+STATS_HELP_TEXT = (
+    "Как читать статистику 📈\n\n"
+    "Каждый раз, когда цена входит в зону уровня, бот записывает сигнал, "
+    "а потом смотрит, куда цена ушла через 1, 3 и 7 дней.\n\n"
+    "Пример строки:\n"
+    "Золото 61.8%: сигналов 5, +1.2% / -0.5% / +2.0%\n\n"
+    "Это значит: таких сигналов было 5, и в среднем через день после сигнала "
+    "цена была на 1.2% выше, через 3 дня — на 0.5% ниже, через неделю — "
+    "на 2% выше. Плюс — цена в среднем росла, минус — падала, "
+    "прочерк — результат ещё не наступил.\n\n"
+    "Зачем это нужно: со временем видно, какие уровни у каких инструментов "
+    "реально отрабатывают, а какие — просто шум.\n\n"
+    "Важно: это среднее по прошлому, а не гарантия на будущее. Пока сигналов "
+    "по уровню меньше 20-30, цифры шумные и выводы делать рано. "
+    "Не финансовый совет."
+)
+
+USAGE_TEXT = (
+    "Как пользоваться ботом 🤖\n\n"
+    "📊 Графики — свечной график любого инструмента с уровнями Фибоначчи "
+    "и RSI, в подписи — все уровни и ближайший к цене.\n\n"
+    "📈 Статистика — как отрабатывали прошлые сигналы (см. раздел "
+    "«Как читать статистику»).\n\n"
+    "Каждое утро бот сам присылает дайджест — графики всех инструментов. "
+    "А когда цена входит в зону уровня — присылает алерт, под ним кнопка "
+    "«График», чтобы сразу посмотреть картину.\n\n"
+    "Ничего настраивать не нужно: подписка активна — значит дайджест "
+    "и алерты уже приходят."
+)
+
+help_menu = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="📐 Уровни Фибоначчи", callback_data="help:fib")],
+        [InlineKeyboardButton(text="📈 Как читать статистику", callback_data="help:stats")],
+        [InlineKeyboardButton(text="🤖 Как пользоваться ботом", callback_data="help:usage")],
+    ]
+)
+
+stats_help_button = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="❓ Как читать", callback_data="help:stats")]
+    ]
+)
+
 
 async def send_metal(chat_id: int, name: str):
     ticker = METALS[name]
@@ -229,7 +273,20 @@ async def on_payment(message: Message):
 
 @dp.callback_query(lambda c: c.data == "help")
 async def cb_help(callback: CallbackQuery):
-    await callback.message.answer(HELP_TEXT)
+    await callback.message.answer("Что объяснить?", reply_markup=help_menu)
+    await ack(callback)
+
+
+HELP_SECTIONS = {
+    "help:fib": HELP_TEXT,
+    "help:stats": STATS_HELP_TEXT,
+    "help:usage": USAGE_TEXT,
+}
+
+
+@dp.callback_query(lambda c: c.data in HELP_SECTIONS)
+async def cb_help_section(callback: CallbackQuery):
+    await callback.message.answer(HELP_SECTIONS[callback.data])
     await ack(callback)
 
 
@@ -248,7 +305,7 @@ async def cb_stats(callback: CallbackQuery):
         return
     await ack(callback)
     stats = await asyncio.to_thread(level_stats)
-    await callback.message.answer(format_stats(stats))
+    await callback.message.answer(format_stats(stats), reply_markup=stats_help_button)
 
 
 @dp.callback_query(lambda c: c.data == "metal:all")
@@ -275,7 +332,7 @@ async def cmd_stats(message: Message):
     if not has_access(message.from_user.id):
         return
     stats = await asyncio.to_thread(level_stats)
-    await message.answer(format_stats(stats))
+    await message.answer(format_stats(stats), reply_markup=stats_help_button)
 
 
 @dp.message(F.text == BTN_CHARTS)
@@ -292,12 +349,12 @@ async def btn_stats(message: Message):
         await message.answer("Доступ по подписке:", reply_markup=subscribe_menu)
         return
     stats = await asyncio.to_thread(level_stats)
-    await message.answer(format_stats(stats))
+    await message.answer(format_stats(stats), reply_markup=stats_help_button)
 
 
 @dp.message(F.text == BTN_HELP)
 async def btn_help(message: Message):
-    await message.answer(HELP_TEXT)
+    await message.answer("Что объяснить?", reply_markup=help_menu)
 
 
 @dp.message()
