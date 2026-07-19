@@ -29,7 +29,7 @@ def render_chart(df: pd.DataFrame, zones: dict, metal_name: str, out_path: str) 
         df,
         type="candle",
         style="charles",
-        title=f"\n{metal_name} — зоны Фибоначчи",
+        title=f"\n{metal_name} — зоны Фибоначчи (дневные свечи, 60 дней)",
         hlines=dict(hlines=hline_values, colors=hline_colors, linewidths=hline_widths, linestyle="--"),
         addplot=[rsi_panel],
         panel_ratios=(3, 1),
