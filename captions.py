@@ -17,23 +17,36 @@ TERMINAL_SEARCH = {
 
 
 def format_metal_caption(name: str, z: dict) -> str:
-    lines = [f"{name}: цена {z['current_price']} (диапазон {z['low']}-{z['high']})", ""]
+    """Подпись к графику (HTML): жирный заголовок, уровни ровным столбиком."""
+    lines = [
+        f"<b>{name}</b> — цена <b>{z['current_price']}</b>",
+        f"Диапазон 60 дней: {z['low']}–{z['high']}",
+        "",
+    ]
+    level_rows = []
     for ratio, level in z["levels"].items():
+        star = "★" if ratio == 0.618 else " "
         marker = (
-            " <- ближайший, в зоне" if ratio == z["nearest_ratio"] and z["near_zone"]
-            else " <- ближайший" if ratio == z["nearest_ratio"]
+            "  🎯 в зоне" if ratio == z["nearest_ratio"] and z["near_zone"]
+            else "  ← ближайший" if ratio == z["nearest_ratio"]
             else ""
         )
-        lines.append(f"{FIB_LABELS[ratio]}: {level}{marker}")
-    lines += ["", f"Искать в терминале: {TERMINAL_SEARCH[name]}"]
+        level_rows.append(f"{ratio * 100:>5.1f}%{star} {level:>10}{marker}")
+    lines.append("<code>" + "\n".join(level_rows) + "</code>")
+    lines += [
+        "",
+        "★ — золотое сечение, обычно самый значимый уровень",
+        f"<i>Искать в терминале: {TERMINAL_SEARCH[name]}</i>",
+    ]
     return "\n".join(lines)
 
 
 def format_zone_alert(name: str, z: dict) -> str:
     return (
-        f"⚡ {name}: цена {z['current_price']} вошла в зону "
-        f"{FIB_LABELS[z['nearest_ratio']]} (уровень {z['nearest_level']}).\n"
-        f"Диапазон свинга: {z['low']}-{z['high']}. Не финансовый совет."
+        f"⚡ <b>{name}</b>: цена <b>{z['current_price']}</b> вошла в зону уровня "
+        f"<b>{FIB_LABELS[z['nearest_ratio']]}</b> ({z['nearest_level']}).\n"
+        f"Диапазон свинга: {z['low']}–{z['high']}.\n"
+        f"<i>Не финансовый совет.</i>"
     )
 
 
@@ -46,18 +59,23 @@ def format_stats(rows: list[dict]) -> str:
     выборку — выводы по паре сигналов делать нельзя."""
     if not rows:
         return (
-            "Статистика пока пустая: она копится с каждым алертом.\n"
+            "<b>📈 Статистика сигналов</b>\n\n"
+            "Пока пустая: она копится с каждым алертом.\n"
             "Загляни через несколько недель."
         )
-    lines = ["Средний ход цены после входа в зону (за 1д / 3д / 7д):", ""]
+    lines = [
+        "<b>📈 Статистика сигналов</b>",
+        "Средний ход цены после входа в зону (1д / 3д / 7д):",
+        "",
+    ]
     for r in rows:
         lines.append(
-            f"{r['metal']} {FIB_LABELS[r['ratio']]}: сигналов {r['signals']}, "
-            f"{_fmt_pct(r['avg_1d'])} / {_fmt_pct(r['avg_3d'])} / {_fmt_pct(r['avg_7d'])}"
+            f"<b>{r['metal']} {FIB_LABELS[r['ratio']]}</b> — сигналов {r['signals']}:\n"
+            f"    {_fmt_pct(r['avg_1d'])} / {_fmt_pct(r['avg_3d'])} / {_fmt_pct(r['avg_7d'])}"
         )
     lines += [
         "",
-        "Это не вероятность успеха, а среднее движение цены. "
-        "Пока сигналов мало, цифры шумные. Не финансовый совет.",
+        "<i>Это не вероятность успеха, а среднее движение цены. "
+        "Пока сигналов мало, цифры шумные. Не финансовый совет.</i>",
     ]
     return "\n".join(lines)

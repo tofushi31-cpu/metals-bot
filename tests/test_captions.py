@@ -24,8 +24,9 @@ def test_caption_contains_levels_and_terminal_hint():
     caption = format_metal_caption("Золото", _zones())
 
     assert "Золото" in caption
-    assert "61.8% (золотое сечение)" in caption
-    assert "ближайший" in caption
+    assert "61.8%★" in caption
+    assert "золотое сечение" in caption
+    assert "в зоне" in caption  # цена в тестовых данных — прямо на максимуме
     assert "GC1!" in caption
 
 

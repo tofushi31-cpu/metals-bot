@@ -197,7 +197,10 @@ async def send_metal(chat_id: int, name: str):
         path = os.path.join(tmp_dir, "chart.png")
         render_chart(df, zones, name, path)
         await bot.send_photo(
-            chat_id, FSInputFile(path), caption=format_metal_caption(name, zones)
+            chat_id,
+            FSInputFile(path),
+            caption=format_metal_caption(name, zones),
+            parse_mode="HTML",
         )
 
 
@@ -306,7 +309,9 @@ async def cb_stats(callback: CallbackQuery):
         return
     await ack(callback)
     stats = await asyncio.to_thread(level_stats)
-    await callback.message.answer(format_stats(stats), reply_markup=stats_help_button)
+    await callback.message.answer(
+        format_stats(stats), reply_markup=stats_help_button, parse_mode="HTML"
+    )
 
 
 @dp.callback_query(lambda c: c.data == "metal:all")
@@ -333,7 +338,9 @@ async def cmd_stats(message: Message):
     if not has_access(message.from_user.id):
         return
     stats = await asyncio.to_thread(level_stats)
-    await message.answer(format_stats(stats), reply_markup=stats_help_button)
+    await message.answer(
+        format_stats(stats), reply_markup=stats_help_button, parse_mode="HTML"
+    )
 
 
 @dp.message(F.text == BTN_CHARTS)
@@ -350,7 +357,9 @@ async def btn_stats(message: Message):
         await message.answer("Доступ по подписке:", reply_markup=subscribe_menu)
         return
     stats = await asyncio.to_thread(level_stats)
-    await message.answer(format_stats(stats), reply_markup=stats_help_button)
+    await message.answer(
+        format_stats(stats), reply_markup=stats_help_button, parse_mode="HTML"
+    )
 
 
 @dp.message(F.text == BTN_HELP)
@@ -437,7 +446,10 @@ async def zone_alert_loop():
             for chat_id in recipients():
                 try:
                     await bot.send_message(
-                        chat_id, format_zone_alert(name, zones), reply_markup=alert_menu(name)
+                        chat_id,
+                        format_zone_alert(name, zones),
+                        reply_markup=alert_menu(name),
+                        parse_mode="HTML",
                     )
                 except Exception:
                     logging.exception("Алерт %s для %s не отправился", name, chat_id)
