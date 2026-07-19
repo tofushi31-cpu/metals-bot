@@ -3,9 +3,11 @@ from datetime import date, timedelta
 
 from history import (
     alerts_missing_outcomes,
+    create_gift,
     level_stats,
     record_alert,
     record_outcome,
+    redeem_gift,
     was_alerted_today,
 )
 
@@ -59,6 +61,15 @@ def test_outcomes_fill_and_stats(tmp_path):
     assert round(stats[0]["avg_1d"], 2) == 1.0
     assert round(stats[0]["avg_3d"], 2) == 2.0
     assert stats[0]["avg_7d"] is None
+
+
+def test_gift_code_is_single_use(tmp_path):
+    db = tmp_path / "test.db"
+    code = create_gift(30, db_path=db)
+
+    assert redeem_gift(code, user_id=111, db_path=db) == 30  # первый получает
+    assert redeem_gift(code, user_id=222, db_path=db) is None  # второй — нет
+    assert redeem_gift("несуществующий", user_id=333, db_path=db) is None
 
 
 def test_old_db_gets_new_columns(tmp_path):

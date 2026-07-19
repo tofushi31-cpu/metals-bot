@@ -13,9 +13,10 @@ from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import (
     BotCommand,
+    BotCommandScopeChat,
     CallbackQuery,
     FSInputFile,
     InlineKeyboardButton,
@@ -35,10 +36,12 @@ from history import (
     active_subscribers,
     add_subscription,
     alerts_missing_outcomes,
+    create_gift,
     is_subscriber,
     level_stats,
     record_alert,
     record_outcome,
+    redeem_gift,
     was_alerted_today,
 )
 from signals import (
@@ -221,7 +224,21 @@ INSTRUMENTS_TEXT = "золотом, серебром, медью, алюмини
 
 
 @dp.message(Command("start"))
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, command: CommandObject):
+    # Переход по подарочной ссылке: /start gift_<код>
+    if command.args and command.args.startswith("gift_"):
+        days = redeem_gift(command.args.removeprefix("gift_"), message.from_user.id)
+        if days:
+            expires = add_subscription(message.from_user.id, days)
+            await message.answer(
+                f"🎁 Тебе подарили подписку на {days} дней — активна до {expires[:10]}.\n\n"
+                f"Слежу за {INSTRUMENTS_TEXT}: графики, ежедневный дайджест и алерты.\n"
+                "Кнопки навигации — внизу экрана 👇",
+                reply_markup=bottom_keyboard,
+            )
+            return
+        await message.answer("Эта подарочная ссылка уже использована или недействительна.")
+
     if has_access(message.from_user.id):
         await message.answer(
             f"Слежу за {INSTRUMENTS_TEXT}.\n\n"
@@ -238,6 +255,26 @@ async def cmd_start(message: Message):
             "Доступ по подписке:",
             reply_markup=subscribe_menu,
         )
+
+
+@dp.message(Command("gift"))
+async def cmd_gift(message: Message, command: CommandObject):
+    """Только для админов: /gift [дней] — одноразовая подарочная ссылка на подписку."""
+    if not is_admin(message.from_user.id):
+        return
+    args = (command.args or "").strip()
+    days = int(args) if args.isdigit() and int(args) > 0 else SUB_DAYS
+    code = create_gift(days)
+    me = await bot.get_me()
+    link = f"https://t.me/{me.username}?start=gift_{code}"
+    await message.answer(
+        f"🎁 Подарочная ссылка на <b>{days} дней</b> подписки:\n\n"
+        f"{link}\n\n"
+        "Отправь её тому, кому даришь. Ссылка одноразовая — сработает "
+        "только у первого, кто по ней перейдёт и нажмёт Start.\n"
+        f"<i>Другой срок: /gift 90 — ссылка на 90 дней.</i>",
+        parse_mode="HTML",
+    )
 
 
 @dp.callback_query(lambda c: c.data == "subscribe")
@@ -458,12 +495,22 @@ async def zone_alert_loop():
 
 
 async def main():
-    await bot.set_my_commands(
-        [
-            BotCommand(command="start", description="Главное меню"),
-            BotCommand(command="stats", description="Статистика сигналов"),
-        ]
-    )
+    public_commands = [
+        BotCommand(command="start", description="Главное меню"),
+        BotCommand(command="stats", description="Статистика сигналов"),
+    ]
+    await bot.set_my_commands(public_commands)
+    admin_commands = public_commands + [
+        BotCommand(command="gift", description="Подарить подписку (ссылкой)"),
+    ]
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.set_my_commands(
+                admin_commands, scope=BotCommandScopeChat(chat_id=admin_id)
+            )
+        except TelegramBadRequest:
+            # админ ещё ни разу не открывал чат с ботом — некуда ставить меню
+            logging.warning("Не удалось задать меню команд для админа %s", admin_id)
     asyncio.create_task(daily_digest_loop())
     asyncio.create_task(zone_alert_loop())
     asyncio.create_task(outcome_backfill_loop())

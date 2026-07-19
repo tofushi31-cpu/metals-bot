@@ -2,6 +2,7 @@
 «сколько раз зона отработала» — плюс подписчики (оплата через Telegram Stars)."""
 
 import os
+import secrets
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -43,6 +44,15 @@ def _conn(db_path=DB_PATH):
         """CREATE TABLE IF NOT EXISTS subscribers (
             user_id INTEGER PRIMARY KEY,
             expires_at TEXT NOT NULL
+        )"""
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS gifts (
+            code TEXT PRIMARY KEY,
+            days INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            used_by INTEGER,
+            used_at TEXT
         )"""
     )
     return conn
@@ -148,6 +158,30 @@ def add_subscription(user_id: int, days: int, db_path=DB_PATH) -> str:
             (user_id, expires),
         )
     return expires
+
+
+def create_gift(days: int, db_path=DB_PATH) -> str:
+    """Одноразовый подарочный код на подписку — вставляется в ссылку t.me/...?start=gift_<код>."""
+    code = secrets.token_urlsafe(8)
+    with _conn(db_path) as conn:
+        conn.execute("INSERT INTO gifts (code, days) VALUES (?, ?)", (code, days))
+    return code
+
+
+def redeem_gift(code: str, user_id: int, db_path=DB_PATH) -> int | None:
+    """Погашает код: возвращает число дней подписки или None, если код
+    не существует или уже использован. Отметка used_by атомарная —
+    два человека по одной ссылке подписку не получат."""
+    with _conn(db_path) as conn:
+        cur = conn.execute(
+            "UPDATE gifts SET used_by = ?, used_at = datetime('now') "
+            "WHERE code = ? AND used_by IS NULL",
+            (user_id, code),
+        )
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute("SELECT days FROM gifts WHERE code = ?", (code,)).fetchone()
+    return row[0]
 
 
 def is_subscriber(user_id: int, db_path=DB_PATH) -> bool:
