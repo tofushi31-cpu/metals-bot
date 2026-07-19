@@ -29,3 +29,20 @@ def test_render_chart_creates_png(tmp_path):
     assert result == str(out)
     assert out.exists()
     assert out.stat().st_size > 5000  # не пустой файл, а реальная картинка
+
+
+def test_render_chart_with_divergence(tmp_path):
+    df = _fake_ohlc()
+    zones = compute_fib_zones(df)
+    out = tmp_path / "chart_div.png"
+    divergences = [{
+        "type": "classic_bullish",
+        "price1": df["Low"].iloc[10], "price2": df["Low"].iloc[20],
+        "rsi1": 25.0, "rsi2": 35.0,
+        "date1": df.index[10], "date2": df.index[20],
+    }]
+
+    render_chart(df, zones, "Тест", str(out), divergences=divergences)
+
+    assert out.exists()
+    assert out.stat().st_size > 5000

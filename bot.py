@@ -166,8 +166,8 @@ HELP_TEXT = (
     "Это просто уровни цены, не рекомендация покупать/продавать.\n\n"
     "<b>🔀 Дивергенции</b> — когда цена и RSI расходятся: цена ставит новый "
     "максимум/минимум, а RSI — нет. Классическая (у крайних значений RSI) "
-    "намекает на разворот, скрытая — на продолжение тренда. Показываются под "
-    "графиком и в алертах, если совпали с зоной."
+    "намекает на разворот, скрытая — на продолжение тренда. Линия прямо на "
+    "графике (цена и RSI) и подпись под ним, в алертах — если совпали с зоной."
 )
 
 STATS_HELP_TEXT = (
@@ -251,7 +251,7 @@ async def send_metal(chat_id: int, name: str, tf: str = DEFAULT_TIMEFRAME):
     divergences = find_divergences(df)
     with tempfile.TemporaryDirectory() as tmp_dir:
         path = os.path.join(tmp_dir, "chart.png")
-        render_chart(df, zones, name, path, tf_label=tf_label)
+        render_chart(df, zones, name, path, tf_label=tf_label, divergences=divergences)
         await bot.send_photo(
             chat_id,
             FSInputFile(path),

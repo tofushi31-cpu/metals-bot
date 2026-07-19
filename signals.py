@@ -222,7 +222,7 @@ def find_divergences(df: pd.DataFrame) -> list[dict]:
     Скрытые (сигнал продолжения тренда) — без этого порога."""
     d = df.copy()
     d["_rsi"] = d.ta.rsi(length=14)
-    d = d.dropna(subset=["_rsi"]).reset_index(drop=True)
+    d = d.dropna(subset=["_rsi"])  # индекс (даты) не трогаем — нужен для отрисовки на графике
 
     min_len = DIVERGENCE_MAX_DISTANCE + 2 * DIVERGENCE_PIVOT_LEG + 1
     if len(d) < min_len:
@@ -237,16 +237,15 @@ def find_divergences(df: pd.DataFrame) -> list[dict]:
         price1, price2 = d["High"].iloc[i1], d["High"].iloc[i2]
         rsi1, rsi2 = d["_rsi"].iloc[i1], d["_rsi"].iloc[i2]
         if DIVERGENCE_MIN_DISTANCE <= dist <= DIVERGENCE_MAX_DISTANCE and abs(rsi2 - rsi1) >= DIVERGENCE_MIN_RSI_DIFF:
+            base = {
+                "price1": price1, "price2": price2,
+                "rsi1": round(float(rsi1), 1), "rsi2": round(float(rsi2), 1),
+                "date1": d.index[i1], "date2": d.index[i2],
+            }
             if price2 > price1 and rsi2 < rsi1 and max(rsi1, rsi2) >= DIVERGENCE_OVERBOUGHT:
-                divergences.append({
-                    "type": "classic_bearish", "price1": price1, "price2": price2,
-                    "rsi1": round(float(rsi1), 1), "rsi2": round(float(rsi2), 1),
-                })
+                divergences.append({"type": "classic_bearish", **base})
             elif price2 < price1 and rsi2 > rsi1:
-                divergences.append({
-                    "type": "hidden_bearish", "price1": price1, "price2": price2,
-                    "rsi1": round(float(rsi1), 1), "rsi2": round(float(rsi2), 1),
-                })
+                divergences.append({"type": "hidden_bearish", **base})
 
     if len(pivot_lows) >= 2:
         i1, i2 = pivot_lows[-2], pivot_lows[-1]
@@ -254,16 +253,15 @@ def find_divergences(df: pd.DataFrame) -> list[dict]:
         price1, price2 = d["Low"].iloc[i1], d["Low"].iloc[i2]
         rsi1, rsi2 = d["_rsi"].iloc[i1], d["_rsi"].iloc[i2]
         if DIVERGENCE_MIN_DISTANCE <= dist <= DIVERGENCE_MAX_DISTANCE and abs(rsi2 - rsi1) >= DIVERGENCE_MIN_RSI_DIFF:
+            base = {
+                "price1": price1, "price2": price2,
+                "rsi1": round(float(rsi1), 1), "rsi2": round(float(rsi2), 1),
+                "date1": d.index[i1], "date2": d.index[i2],
+            }
             if price2 < price1 and rsi2 > rsi1 and min(rsi1, rsi2) <= DIVERGENCE_OVERSOLD:
-                divergences.append({
-                    "type": "classic_bullish", "price1": price1, "price2": price2,
-                    "rsi1": round(float(rsi1), 1), "rsi2": round(float(rsi2), 1),
-                })
+                divergences.append({"type": "classic_bullish", **base})
             elif price2 > price1 and rsi2 < rsi1:
-                divergences.append({
-                    "type": "hidden_bullish", "price1": price1, "price2": price2,
-                    "rsi1": round(float(rsi1), 1), "rsi2": round(float(rsi2), 1),
-                })
+                divergences.append({"type": "hidden_bullish", **base})
 
     return divergences
 
