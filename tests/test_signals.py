@@ -129,6 +129,18 @@ def test_fetch_timeframe_trims_to_chart_candles(monkeypatch):
     assert len(df) == signals.CHART_CANDLES
 
 
+def test_market_is_paused():
+    hours_ago = pd.Timestamp.now() - pd.Timedelta(hours=30)
+    stale = pd.DataFrame({"Close": [1.0]}, index=[hours_ago])
+    fresh = pd.DataFrame({"Close": [1.0]}, index=[pd.Timestamp.now()])
+
+    assert signals.market_is_paused(stale, "15м") is True
+    assert signals.market_is_paused(fresh, "15м") is False
+    # на дневных/недельных пауза не помечается, даже если свеча старая
+    assert signals.market_is_paused(stale, "Д") is False
+    assert signals.market_is_paused(stale, "Н") is False
+
+
 def test_close_price_after():
     df = _fake_ohlc()  # свечи с 2026-01-01, шаг 0.3 в день от 100.0
 

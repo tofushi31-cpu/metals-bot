@@ -161,6 +161,16 @@ def compute_fib_zones(df: pd.DataFrame, lookback: int = 60) -> dict:
     }
 
 
+def market_is_paused(df: pd.DataFrame, tf: str = DEFAULT_TIMEFRAME) -> bool:
+    """Для внутридневных таймфреймов: свежих свечей давно не было — рынок закрыт
+    (выходные или перерыв). На дневных/недельных пауза не видна и не помечается."""
+    if TIMEFRAMES[tf]["interval"] in ("1d", "1wk"):
+        return False
+    last = df.index[-1]
+    now = pd.Timestamp.now(tz=getattr(last, "tz", None))
+    return (now - last) > pd.Timedelta(hours=2.5)
+
+
 def close_price_after(df: pd.DataFrame, alert_day: str, horizon_days: int) -> float | None:
     """Цена закрытия первой торговой свечи спустя horizon_days после дня алерта.
     None — если такой день ещё не наступил или не попал в скачанную историю."""

@@ -16,13 +16,21 @@ TERMINAL_SEARCH = {
 }
 
 
-def format_metal_caption(name: str, z: dict, tf_label: str = "дневные свечи") -> str:
+def format_metal_caption(
+    name: str, z: dict, tf_label: str = "дневные свечи", paused: bool = False
+) -> str:
     """Подпись к графику (HTML): жирный заголовок, уровни ровным столбиком."""
     lines = [
         f"<b>{name}</b> — цена <b>{z['current_price']}</b> · {tf_label}",
         f"Диапазон последних 60 свечей: {z['low']}–{z['high']}",
         "",
     ]
+    if paused:
+        lines.insert(
+            2,
+            "⏸ <i>Рынок сейчас закрыт (выходные или перерыв) — показаны последние "
+            "доступные свечи, новые появятся после открытия торгов.</i>",
+        )
     level_rows = []
     for ratio, level in z["levels"].items():
         star = "★" if ratio == 0.618 else " "

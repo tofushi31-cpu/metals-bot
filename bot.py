@@ -56,6 +56,7 @@ from signals import (
     compute_indicators,
     fetch_prices,
     fetch_timeframe,
+    market_is_paused,
 )
 
 load_dotenv()
@@ -190,6 +191,10 @@ USAGE_TEXT = (
     "Алерты, дайджест и статистика всегда считаются по дневному таймфрейму.\n\n"
     "<b>📈 Статистика</b> — как отрабатывали прошлые сигналы (см. раздел "
     "«Как читать статистику»).\n\n"
+"<b>🕐 Режим торгов</b> — фьючерсы торгуются почти круглосуточно с понедельника "
+    "по пятницу, в выходные рынок закрыт. В выходные графики показывают последние "
+    "свечи пятницы (бот это подпишет), внутридневные таймфреймы оживают в ночь "
+    "на понедельник.\n\n"
     "Каждое утро бот сам присылает дайджест — графики всех инструментов. "
     "А когда цена входит в зону уровня — присылает алерт, под ним кнопка "
     "«График», чтобы сразу посмотреть картину.\n\n"
@@ -237,13 +242,14 @@ async def send_metal(chat_id: int, name: str, tf: str = DEFAULT_TIMEFRAME):
         return
     zones = compute_fib_zones(df)
     tf_label = TIMEFRAME_TITLES[tf]
+    paused = market_is_paused(df, tf)
     with tempfile.TemporaryDirectory() as tmp_dir:
         path = os.path.join(tmp_dir, "chart.png")
         render_chart(df, zones, name, path, tf_label=tf_label)
         await bot.send_photo(
             chat_id,
             FSInputFile(path),
-            caption=format_metal_caption(name, zones, tf_label),
+            caption=format_metal_caption(name, zones, tf_label, paused),
             parse_mode="HTML",
             reply_markup=tf_menu(name, tf),
         )
