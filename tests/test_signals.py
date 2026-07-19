@@ -216,6 +216,17 @@ def test_hidden_bearish_divergence():
     assert found[0]["rsi2"] > found[0]["rsi1"]  # RSI: выше максимум
 
 
+def test_daily_data_is_stale():
+    yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
+    today = pd.Timestamp.now()
+
+    stale = pd.DataFrame({"Close": [1.0]}, index=[yesterday])
+    fresh = pd.DataFrame({"Close": [1.0]}, index=[today])
+
+    assert signals.daily_data_is_stale(stale) is True
+    assert signals.daily_data_is_stale(fresh) is False
+
+
 def test_close_price_after():
     df = _fake_ohlc()  # свечи с 2026-01-01, шаг 0.3 в день от 100.0
 

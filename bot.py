@@ -54,6 +54,7 @@ from signals import (
     close_price_after,
     compute_fib_zones,
     compute_indicators,
+    daily_data_is_stale,
     fetch_prices,
     fetch_timeframe,
     find_divergences,
@@ -199,7 +200,8 @@ USAGE_TEXT = (
 "<b>🕐 Режим торгов</b> — фьючерсы торгуются почти круглосуточно с понедельника "
     "по пятницу, в выходные рынок закрыт. В выходные графики показывают последние "
     "свечи пятницы (бот это подпишет), внутридневные таймфреймы оживают в ночь "
-    "на понедельник.\n\n"
+    "на понедельник. Дайджест и алерты по зонам на выходных и праздниках не "
+    "приходят — по неизменной цене слать их смысла нет.\n\n"
     "Каждое утро бот сам присылает дайджест — графики всех инструментов. "
     "А когда цена входит в зону уровня — присылает алерт, под ним кнопка "
     "«График», чтобы сразу посмотреть картину.\n\n"
@@ -531,6 +533,14 @@ async def daily_digest_loop():
             target += timedelta(days=1)
         await asyncio.sleep((target - now).total_seconds())
 
+        try:
+            sample_df = await asyncio.to_thread(fetch_prices, next(iter(METALS.values())))
+            if daily_data_is_stale(sample_df):
+                logging.info("Дайджест пропущен: рынок не торговал (выходной/праздник)")
+                continue
+        except Exception:
+            logging.exception("Проверка свежести данных для дайджеста не удалась — отправляю как обычно")
+
         for chat_id in recipients():
             try:
                 await send_all_metals(chat_id)
@@ -545,6 +555,8 @@ async def zone_alert_loop():
         for name, ticker in METALS.items():
             try:
                 df = await asyncio.to_thread(fetch_prices, ticker)
+                if daily_data_is_stale(df):
+                    continue  # рынок не торговал — новых данных для проверки нет
                 zones = compute_fib_zones(df)
             except Exception:
                 logging.exception("Алерт-проверка %s не удалась", name)

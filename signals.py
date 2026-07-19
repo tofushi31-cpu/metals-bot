@@ -173,6 +173,16 @@ def market_is_paused(df: pd.DataFrame, tf: str = DEFAULT_TIMEFRAME) -> bool:
     return (now - last) > pd.Timedelta(hours=2.5)
 
 
+def daily_data_is_stale(df: pd.DataFrame) -> bool:
+    """Дневная свеча ещё не обновлялась сегодня — значит рынок не торговал
+    (выходные, праздник). Алерты и дайджест на такой день не шлются: без
+    новых данных зона не может «войти» заново, будет один и тот же алерт
+    о неизменившейся цене — только шум для пользователя."""
+    last = df.index[-1]
+    now = pd.Timestamp.now(tz=getattr(last, "tz", None))
+    return last.date() < now.date()
+
+
 def close_price_after(df: pd.DataFrame, alert_day: str, horizon_days: int) -> float | None:
     """Цена закрытия первой торговой свечи спустя horizon_days после дня алерта.
     None — если такой день ещё не наступил или не попал в скачанную историю."""
