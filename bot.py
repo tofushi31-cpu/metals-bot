@@ -372,21 +372,20 @@ async def outcome_backfill_loop():
     из этого копится статистика отработки уровней (/stats)."""
     while True:
         for name, ticker in METALS.items():
-            pending = await asyncio.to_thread(alerts_missing_outcomes, name)
-            if not pending:
-                continue
             try:
+                pending = await asyncio.to_thread(alerts_missing_outcomes, name)
+                if not pending:
+                    continue
                 df = await asyncio.to_thread(fetch_prices, ticker)
+                for alert in pending:
+                    for horizon in alert["missing"]:
+                        price = close_price_after(df, alert["day"], horizon)
+                        if price is not None:
+                            await asyncio.to_thread(
+                                record_outcome, alert["id"], horizon, price
+                            )
             except Exception:
-                logging.exception("Дозапись результатов %s: данные недоступны", name)
-                continue
-            for alert in pending:
-                for horizon in alert["missing"]:
-                    price = close_price_after(df, alert["day"], horizon)
-                    if price is not None:
-                        await asyncio.to_thread(
-                            record_outcome, alert["id"], horizon, price
-                        )
+                logging.exception("Дозапись результатов %s не удалась", name)
         await asyncio.sleep(24 * 60 * 60)
 
 
@@ -412,10 +411,10 @@ async def zone_alert_loop():
         for name, ticker in METALS.items():
             try:
                 df = await asyncio.to_thread(fetch_prices, ticker)
+                zones = compute_fib_zones(df)
             except Exception:
-                logging.exception("Алерт-проверка %s: данные недоступны", name)
+                logging.exception("Алерт-проверка %s не удалась", name)
                 continue
-            zones = compute_fib_zones(df)
             if not zones["near_zone"] or was_alerted_today(name, zones["nearest_ratio"]):
                 continue
             indicators = compute_indicators(df)
