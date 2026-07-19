@@ -56,6 +56,7 @@ from signals import (
     compute_indicators,
     fetch_prices,
     fetch_timeframe,
+    find_divergences,
     market_is_paused,
 )
 
@@ -162,7 +163,11 @@ HELP_TEXT = (
     "Ближайший к текущей цене уровень помечен 'ближайший', а если цена подошла "
     "к нему ближе чем на 1% — 'в зоне', то есть в зону интереса для возможного "
     "входа или выхода.\n\n"
-    "Это просто уровни цены, не рекомендация покупать/продавать."
+    "Это просто уровни цены, не рекомендация покупать/продавать.\n\n"
+    "<b>🔀 Дивергенции</b> — когда цена и RSI расходятся: цена ставит новый "
+    "максимум/минимум, а RSI — нет. Классическая (у крайних значений RSI) "
+    "намекает на разворот, скрытая — на продолжение тренда. Показываются под "
+    "графиком и в алертах, если совпали с зоной."
 )
 
 STATS_HELP_TEXT = (
@@ -243,13 +248,14 @@ async def send_metal(chat_id: int, name: str, tf: str = DEFAULT_TIMEFRAME):
     zones = compute_fib_zones(df)
     tf_label = TIMEFRAME_TITLES[tf]
     paused = market_is_paused(df, tf)
+    divergences = find_divergences(df)
     with tempfile.TemporaryDirectory() as tmp_dir:
         path = os.path.join(tmp_dir, "chart.png")
         render_chart(df, zones, name, path, tf_label=tf_label)
         await bot.send_photo(
             chat_id,
             FSInputFile(path),
-            caption=format_metal_caption(name, zones, tf_label, paused),
+            caption=format_metal_caption(name, zones, tf_label, paused, divergences),
             parse_mode="HTML",
             reply_markup=tf_menu(name, tf),
         )
@@ -546,6 +552,8 @@ async def zone_alert_loop():
             if not zones["near_zone"] or was_alerted_today(name, zones["nearest_ratio"]):
                 continue
             indicators = compute_indicators(df)
+            divergences = find_divergences(df)
+            divergence_str = ",".join(d["type"] for d in divergences) or None
             record_alert(
                 name,
                 zones["nearest_ratio"],
@@ -553,6 +561,7 @@ async def zone_alert_loop():
                 rsi=indicators["rsi"],
                 atr=indicators["atr"],
                 algo_version=ALGO_VERSION,
+                divergence=divergence_str,
             )
             await asyncio.to_thread(
                 sheets.export_alert,
@@ -565,7 +574,7 @@ async def zone_alert_loop():
                 try:
                     await bot.send_message(
                         chat_id,
-                        format_zone_alert(name, zones),
+                        format_zone_alert(name, zones, divergences),
                         reply_markup=alert_menu(name),
                         parse_mode="HTML",
                     )

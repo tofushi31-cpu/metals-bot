@@ -18,6 +18,7 @@ _ALERT_EXTRA_COLUMNS = {
     "rsi": "REAL",
     "atr": "REAL",
     "algo_version": "INTEGER",
+    "divergence": "TEXT",  # типы дивергенций через запятую, если были на момент алерта
     "price_1d": "REAL",
     "price_3d": "REAL",
     "price_7d": "REAL",
@@ -74,13 +75,14 @@ def record_alert(
     rsi: float | None = None,
     atr: float | None = None,
     algo_version: int | None = None,
+    divergence: str | None = None,
     db_path=DB_PATH,
 ):
     with _conn(db_path) as conn:
         conn.execute(
-            "INSERT INTO alerts (metal, ratio, price, day, timeframe, rsi, atr, algo_version) "
-            "VALUES (?, ?, ?, ?, 'D', ?, ?, ?)",
-            (metal, ratio, price, date.today().isoformat(), rsi, atr, algo_version),
+            "INSERT INTO alerts (metal, ratio, price, day, timeframe, rsi, atr, algo_version, divergence) "
+            "VALUES (?, ?, ?, ?, 'D', ?, ?, ?, ?)",
+            (metal, ratio, price, date.today().isoformat(), rsi, atr, algo_version, divergence),
         )
 
 

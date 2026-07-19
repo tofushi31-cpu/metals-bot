@@ -27,12 +27,15 @@ def test_alert_dedup_per_day(tmp_path):
 def test_record_alert_saves_context(tmp_path):
     db = tmp_path / "test.db"
 
-    record_alert("Золото", 0.618, 2400.5, rsi=34.2, atr=18.7, algo_version=1, db_path=db)
+    record_alert(
+        "Золото", 0.618, 2400.5, rsi=34.2, atr=18.7, algo_version=1,
+        divergence="classic_bullish", db_path=db,
+    )
 
     row = sqlite3.connect(db).execute(
-        "SELECT timeframe, rsi, atr, algo_version FROM alerts"
+        "SELECT timeframe, rsi, atr, algo_version, divergence FROM alerts"
     ).fetchone()
-    assert row == ("D", 34.2, 18.7, 1)
+    assert row == ("D", 34.2, 18.7, 1, "classic_bullish")
 
 
 def test_outcomes_fill_and_stats(tmp_path):

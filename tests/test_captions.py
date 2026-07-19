@@ -39,6 +39,30 @@ def test_zone_alert_mentions_metal_and_level():
     assert "Не финансовый совет" in text
 
 
+def test_caption_mentions_divergence_when_present():
+    caption = format_metal_caption(
+        "Золото", _zones(), divergences=[{"type": "classic_bullish", "price1": 1, "price2": 2, "rsi1": 3, "rsi2": 4}]
+    )
+
+    assert "Дивергенция" in caption
+    assert "Классическая бычья" in caption
+
+
+def test_caption_no_divergence_line_when_absent():
+    caption = format_metal_caption("Золото", _zones(), divergences=[])
+
+    assert "Дивергенция" not in caption
+
+
+def test_zone_alert_mentions_divergence_when_present():
+    z = _zones()
+    text = format_zone_alert(
+        "Медь", z, divergences=[{"type": "hidden_bearish", "price1": 1, "price2": 2, "rsi1": 3, "rsi2": 4}]
+    )
+
+    assert "Скрытая медвежья" in text
+
+
 def test_stats_empty_is_honest():
     text = format_stats([])
 

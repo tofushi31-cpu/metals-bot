@@ -19,6 +19,26 @@ def _fake_ohlc(n=60, start=100.0, step=0.3):
     )
 
 
+def _ohlc_from_deltas(deltas, start=100.0):
+    """Свечи по последовательности приращений цены закрытия — удобно строить
+    конкретный узор для проверки дивергенций."""
+    closes = [start]
+    for d in deltas:
+        closes.append(closes[-1] + d)
+    closes = closes[1:]
+    dates = pd.date_range("2026-01-01", periods=len(closes), freq="D")
+    return pd.DataFrame(
+        {
+            "Open": closes,
+            "High": [c + 0.3 for c in closes],
+            "Low": [c - 0.3 for c in closes],
+            "Close": closes,
+            "Volume": [1000] * len(closes),
+        },
+        index=dates,
+    )
+
+
 def test_compute_fib_zones_levels_between_low_and_high():
     df = _fake_ohlc()
     zones = compute_fib_zones(df)
@@ -139,6 +159,61 @@ def test_market_is_paused():
     # на дневных/недельных пауза не помечается, даже если свеча старая
     assert signals.market_is_paused(stale, "Д") is False
     assert signals.market_is_paused(stale, "Н") is False
+
+
+def test_no_divergence_on_monotonic_trend():
+    # монотонный рост без переломов — пивотов нет, дивергенций тоже
+    assert signals.find_divergences(_fake_ohlc(n=60)) == []
+
+
+def test_classic_bullish_divergence():
+    # резкий обвал (RSI около 0) -> отскок -> пологое снижение к более низкому
+    # минимуму цены, но с более высоким RSI (перепроданность слабее)
+    deltas = [-3] * 10 + [2] * 5 + [-2, 0.5] * 10 + [1] * 6
+    divs = signals.find_divergences(_ohlc_from_deltas(deltas))
+
+    found = [d for d in divs if d["type"] == "classic_bullish"]
+    assert len(found) == 1
+    assert found[0]["price2"] < found[0]["price1"]  # цена: ниже минимум
+    assert found[0]["rsi2"] > found[0]["rsi1"]  # RSI: выше минимум
+    assert found[0]["rsi1"] <= signals.DIVERGENCE_OVERSOLD  # была перепроданность
+
+
+def test_classic_bearish_divergence():
+    # резкое ралли (RSI около 100) -> откат -> пологий рост к более высокому
+    # максимуму цены, но с более слабым RSI (перекупленность слабее)
+    deltas = [3] * 10 + [-2] * 5 + [2, -0.5] * 10 + [-1] * 6
+    divs = signals.find_divergences(_ohlc_from_deltas(deltas))
+
+    found = [d for d in divs if d["type"] == "classic_bearish"]
+    assert len(found) == 1
+    assert found[0]["price2"] > found[0]["price1"]  # цена: выше максимум
+    assert found[0]["rsi2"] < found[0]["rsi1"]  # RSI: ниже максимум
+    assert found[0]["rsi1"] >= signals.DIVERGENCE_OVERBOUGHT  # была перекупленность
+
+
+def test_hidden_bullish_divergence():
+    # восходящий тренд: сначала пологая коррекция (RSI остаётся высоким),
+    # затем более глубокая, но цена делает более высокий минимум — продолжение роста
+    deltas = [3] * 8 + [-1] * 3 + [3] * 8 + [-2, -0.3] * 6 + [1] * 10
+    divs = signals.find_divergences(_ohlc_from_deltas(deltas))
+
+    found = [d for d in divs if d["type"] == "hidden_bullish"]
+    assert len(found) == 1
+    assert found[0]["price2"] > found[0]["price1"]  # цена: выше минимум
+    assert found[0]["rsi2"] < found[0]["rsi1"]  # RSI: ниже минимум
+
+
+def test_hidden_bearish_divergence():
+    # нисходящий тренд: сначала пологий отскок (RSI остаётся низким), затем
+    # более сильный, но цена делает более низкий максимум — продолжение падения
+    deltas = [-3] * 8 + [1] * 3 + [-3] * 8 + [2, 0.3] * 6 + [-1] * 10
+    divs = signals.find_divergences(_ohlc_from_deltas(deltas))
+
+    found = [d for d in divs if d["type"] == "hidden_bearish"]
+    assert len(found) == 1
+    assert found[0]["price2"] < found[0]["price1"]  # цена: ниже максимум
+    assert found[0]["rsi2"] > found[0]["rsi1"]  # RSI: выше максимум
 
 
 def test_close_price_after():
