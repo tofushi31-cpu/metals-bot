@@ -20,9 +20,11 @@ from aiogram.types import (
     FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    KeyboardButton,
     LabeledPrice,
     Message,
     PreCheckoutQuery,
+    ReplyKeyboardMarkup,
 )
 from dotenv import load_dotenv
 
@@ -99,6 +101,20 @@ main_menu = InlineKeyboardMarkup(
 )
 
 
+# Постоянная клавиатура внизу экрана — всегда под рукой, не исчезает после нажатия
+BTN_CHARTS = "📊 Графики"
+BTN_STATS = "📈 Статистика"
+BTN_HELP = "❓ Помощь"
+bottom_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text=BTN_CHARTS), KeyboardButton(text=BTN_STATS)],
+        [KeyboardButton(text=BTN_HELP)],
+    ],
+    resize_keyboard=True,
+    is_persistent=True,
+)
+
+
 def alert_menu(name: str) -> InlineKeyboardMarkup:
     """Кнопки под алертом: сразу открыть график инструмента или главное меню."""
     return InlineKeyboardMarkup(
@@ -162,8 +178,8 @@ async def cmd_start(message: Message):
             f"Слежу за {INSTRUMENTS_TEXT}.\n\n"
             f"Присылаю дайджест каждый день около {DIGEST_HOUR}:00 и алерты, "
             "когда цена входит в зону Фибоначчи.\n\n"
-            "Выбери, что показать:",
-            reply_markup=main_menu,
+            "Кнопки навигации — внизу экрана 👇",
+            reply_markup=bottom_keyboard,
         )
     else:
         await message.answer(
@@ -205,8 +221,9 @@ async def on_payment(message: Message):
     )
     await message.answer(
         f"Спасибо! Подписка активна до {expires[:10]}.\n\n"
-        "Теперь тебе доступны графики, дайджест и алерты:",
-        reply_markup=main_menu,
+        "Теперь тебе доступны графики, дайджест и алерты — "
+        "кнопки навигации внизу экрана 👇",
+        reply_markup=bottom_keyboard,
     )
 
 
@@ -261,12 +278,34 @@ async def cmd_stats(message: Message):
     await message.answer(format_stats(stats))
 
 
+@dp.message(F.text == BTN_CHARTS)
+async def btn_charts(message: Message):
+    if not has_access(message.from_user.id):
+        await message.answer("Доступ по подписке:", reply_markup=subscribe_menu)
+        return
+    await message.answer("Выбери, что показать:", reply_markup=main_menu)
+
+
+@dp.message(F.text == BTN_STATS)
+async def btn_stats(message: Message):
+    if not has_access(message.from_user.id):
+        await message.answer("Доступ по подписке:", reply_markup=subscribe_menu)
+        return
+    stats = await asyncio.to_thread(level_stats)
+    await message.answer(format_stats(stats))
+
+
+@dp.message(F.text == BTN_HELP)
+async def btn_help(message: Message):
+    await message.answer(HELP_TEXT)
+
+
 @dp.message()
 async def any_text(message: Message):
-    """Фолбэк: на любое сообщение показываем меню, чтобы навигация была всегда
+    """Фолбэк: на любое сообщение возвращаем навигацию, чтобы она была всегда
     под рукой, а не только после /start. Регистрируется последним."""
     if has_access(message.from_user.id):
-        await message.answer("Выбери, что показать:", reply_markup=main_menu)
+        await message.answer("Кнопки навигации — внизу экрана 👇", reply_markup=bottom_keyboard)
     else:
         await message.answer("Доступ по подписке:", reply_markup=subscribe_menu)
 
