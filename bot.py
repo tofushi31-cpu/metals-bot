@@ -82,6 +82,23 @@ def recipients() -> set[int]:
     return ADMIN_IDS | set(active_subscribers())
 
 
+async def notify_admins(text: str):
+    """Служебное уведомление всем админам (новый подписчик и т.п.)."""
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, text)
+        except Exception:
+            logging.exception("Уведомление админу %s не отправилось", admin_id)
+
+
+def user_label(user) -> str:
+    parts = [user.full_name or "без имени"]
+    if user.username:
+        parts.append(f"@{user.username}")
+    parts.append(f"id {user.id}")
+    return ", ".join(parts)
+
+
 async def ack(callback: CallbackQuery, text: str | None = None):
     """Ответ на callback; после рестарта бота query может протухнуть (>48с) —
     это не повод не отправлять сам график."""
@@ -236,6 +253,17 @@ async def cmd_start(message: Message, command: CommandObject):
                 "Кнопки навигации — внизу экрана 👇",
                 reply_markup=bottom_keyboard,
             )
+            await notify_admins(
+                f"🎁 По подарочной ссылке подписался: {user_label(message.from_user)}. "
+                f"Подписка на {days} дней, до {expires[:10]}."
+            )
+            await asyncio.to_thread(
+                sheets.export_subscription,
+                "подарок",
+                user_label(message.from_user),
+                days,
+                expires[:10],
+            )
             return
         await message.answer("Эта подарочная ссылка уже использована или недействительна.")
 
@@ -310,6 +338,17 @@ async def on_payment(message: Message):
         "Теперь тебе доступны графики, дайджест и алерты — "
         "кнопки навигации внизу экрана 👇",
         reply_markup=bottom_keyboard,
+    )
+    await notify_admins(
+        f"⭐ Новая оплата: {user_label(message.from_user)}. "
+        f"{message.successful_payment.total_amount} XTR, подписка до {expires[:10]}."
+    )
+    await asyncio.to_thread(
+        sheets.export_subscription,
+        "оплата Stars",
+        user_label(message.from_user),
+        SUB_DAYS,
+        expires[:10],
     )
 
 
