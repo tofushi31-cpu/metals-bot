@@ -15,6 +15,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import (
+    BotCommand,
     CallbackQuery,
     FSInputFile,
     InlineKeyboardButton,
@@ -92,9 +93,22 @@ main_menu = InlineKeyboardMarkup(
     inline_keyboard=[
         *[_metal_buttons[i : i + 2] for i in range(0, len(_metal_buttons), 2)],
         [InlineKeyboardButton(text="📊 Все металлы", callback_data="metal:all")],
+        [InlineKeyboardButton(text="📈 Статистика сигналов", callback_data="stats")],
         [InlineKeyboardButton(text="❓ Помощь", callback_data="help")],
     ]
 )
+
+
+def alert_menu(name: str) -> InlineKeyboardMarkup:
+    """Кнопки под алертом: сразу открыть график инструмента или главное меню."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📊 График", callback_data=f"metal:{name}"),
+                InlineKeyboardButton(text="📋 Меню", callback_data="menu"),
+            ]
+        ]
+    )
 
 HELP_TEXT = (
     "Уровни коррекции Фибоначчи — по максимуму и минимуму цены за последние "
@@ -202,6 +216,24 @@ async def cb_help(callback: CallbackQuery):
     await ack(callback)
 
 
+@dp.callback_query(lambda c: c.data == "menu")
+async def cb_menu(callback: CallbackQuery):
+    await ack(callback)
+    if has_access(callback.from_user.id):
+        await callback.message.answer("Выбери, что показать:", reply_markup=main_menu)
+    else:
+        await callback.message.answer("Доступ по подписке:", reply_markup=subscribe_menu)
+
+
+@dp.callback_query(lambda c: c.data == "stats")
+async def cb_stats(callback: CallbackQuery):
+    if not has_access(callback.from_user.id):
+        return
+    await ack(callback)
+    stats = await asyncio.to_thread(level_stats)
+    await callback.message.answer(format_stats(stats))
+
+
 @dp.callback_query(lambda c: c.data == "metal:all")
 async def cb_metal_all(callback: CallbackQuery):
     if not has_access(callback.from_user.id):
@@ -227,6 +259,16 @@ async def cmd_stats(message: Message):
         return
     stats = await asyncio.to_thread(level_stats)
     await message.answer(format_stats(stats))
+
+
+@dp.message()
+async def any_text(message: Message):
+    """Фолбэк: на любое сообщение показываем меню, чтобы навигация была всегда
+    под рукой, а не только после /start. Регистрируется последним."""
+    if has_access(message.from_user.id):
+        await message.answer("Выбери, что показать:", reply_markup=main_menu)
+    else:
+        await message.answer("Доступ по подписке:", reply_markup=subscribe_menu)
 
 
 async def outcome_backfill_loop():
@@ -298,13 +340,21 @@ async def zone_alert_loop():
             )
             for chat_id in recipients():
                 try:
-                    await bot.send_message(chat_id, format_zone_alert(name, zones))
+                    await bot.send_message(
+                        chat_id, format_zone_alert(name, zones), reply_markup=alert_menu(name)
+                    )
                 except Exception:
                     logging.exception("Алерт %s для %s не отправился", name, chat_id)
         await asyncio.sleep(ALERT_INTERVAL_MIN * 60)
 
 
 async def main():
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Главное меню"),
+            BotCommand(command="stats", description="Статистика сигналов"),
+        ]
+    )
     asyncio.create_task(daily_digest_loop())
     asyncio.create_task(zone_alert_loop())
     asyncio.create_task(outcome_backfill_loop())
