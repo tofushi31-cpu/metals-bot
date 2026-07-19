@@ -83,6 +83,52 @@ def test_compute_indicators_returns_rsi_and_atr():
     assert ind["atr"] is not None and ind["atr"] > 0
 
 
+def test_fetch_timeframe_4h_resamples_hourly(monkeypatch):
+    """4ч склеивается из часовых свечей: high — максимум четырёх, объём — сумма."""
+    def fake_download(ticker, **kwargs):
+        assert kwargs["interval"] == "1h"
+        dates = pd.date_range("2026-01-01", periods=40, freq="h")
+        close = [100.0 + i for i in range(40)]
+        return pd.DataFrame(
+            {
+                "Open": close,
+                "High": [c + 0.5 for c in close],
+                "Low": [c - 0.5 for c in close],
+                "Close": close,
+                "Volume": [1000] * 40,
+            },
+            index=dates,
+        )
+
+    monkeypatch.setattr(signals.yf, "download", fake_download)
+    signals._price_cache.clear()
+
+    df = signals.fetch_timeframe("GC=F", "4ч")
+
+    assert df.index[1] - df.index[0] == pd.Timedelta(hours=4)
+    assert df["Volume"].iloc[0] == 4000  # четыре часовых по 1000
+    assert df["High"].iloc[0] == 103.5  # максимум первых четырёх часов
+    assert df["Open"].iloc[0] == 100.0 and df["Close"].iloc[0] == 103.0
+
+
+def test_fetch_timeframe_trims_to_chart_candles(monkeypatch):
+    def fake_download(ticker, **kwargs):
+        assert kwargs["interval"] == "15m"
+        dates = pd.date_range("2026-01-01", periods=300, freq="15min")
+        close = [100.0] * 300
+        return pd.DataFrame(
+            {"Open": close, "High": close, "Low": close, "Close": close, "Volume": [1] * 300},
+            index=dates,
+        )
+
+    monkeypatch.setattr(signals.yf, "download", fake_download)
+    signals._price_cache.clear()
+
+    df = signals.fetch_timeframe("GC=F", "15м")
+
+    assert len(df) == signals.CHART_CANDLES
+
+
 def test_close_price_after():
     df = _fake_ohlc()  # свечи с 2026-01-01, шаг 0.3 в день от 100.0
 

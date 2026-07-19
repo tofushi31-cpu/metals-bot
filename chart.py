@@ -12,7 +12,13 @@ import mplfinance as mpf
 GOLDEN_RATIO = 0.618
 
 
-def render_chart(df: pd.DataFrame, zones: dict, metal_name: str, out_path: str) -> str:
+def render_chart(
+    df: pd.DataFrame,
+    zones: dict,
+    metal_name: str,
+    out_path: str,
+    tf_label: str = "дневные свечи",
+) -> str:
     df = df.copy()
     df.ta.rsi(length=14, append=True)
 
@@ -29,7 +35,7 @@ def render_chart(df: pd.DataFrame, zones: dict, metal_name: str, out_path: str) 
         df,
         type="candle",
         style="charles",
-        title=f"\n{metal_name} — зоны Фибоначчи (дневные свечи, 60 дней)",
+        title=f"\n{metal_name} — зоны Фибоначчи ({tf_label})",
         hlines=dict(hlines=hline_values, colors=hline_colors, linewidths=hline_widths, linestyle="--"),
         addplot=[rsi_panel],
         panel_ratios=(3, 1),

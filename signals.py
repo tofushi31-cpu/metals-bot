@@ -39,7 +39,7 @@ ALGO_VERSION = 1
 
 # Кэш скачанных цен по (тикер, период): дайджест на N подписчиков и алерт-цикл
 # не должны ходить в Yahoo каждый раз — иначе лимиты и временные баны
-_price_cache: dict[tuple[str, str], tuple[float, pd.DataFrame]] = {}
+_price_cache: dict[tuple[str, str, str], tuple[float, pd.DataFrame]] = {}
 
 # yf.download не потокобезопасен: два одновременных вызова из разных задач
 # смешивают ответы (в таблицу попадают оба тикера). Качаем строго по одному.
@@ -52,11 +52,11 @@ def _cache_ttl_seconds() -> float:
     return float(os.getenv("CACHE_TTL_MINUTES", "10")) * 60
 
 
-def fetch_prices(ticker: str, period: str = "60d") -> pd.DataFrame:
+def fetch_prices(ticker: str, period: str = "60d", interval: str = "1d") -> pd.DataFrame:
     """Загружает OHLC с Yahoo. yfinance регулярно отдаёт пустой DataFrame или
     падает по сети — поэтому несколько попыток, а пустой ответ считается ошибкой.
-    Результат кэшируется на CACHE_TTL_MINUTES минут (по инструменту отдельно)."""
-    key = (ticker, period)
+    Результат кэшируется на CACHE_TTL_MINUTES минут (по инструменту и таймфрейму)."""
+    key = (ticker, period, interval)
     with _fetch_lock:
         cached = _price_cache.get(key)
         if cached and time.time() - cached[0] < _cache_ttl_seconds():
@@ -65,7 +65,9 @@ def fetch_prices(ticker: str, period: str = "60d") -> pd.DataFrame:
         last_error = None
         for attempt in range(1, FETCH_RETRIES + 1):
             try:
-                df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+                df = yf.download(
+                    ticker, period=period, interval=interval, progress=False, auto_adjust=True
+                )
                 if df is not None and not df.empty:
                     if isinstance(df.columns, pd.MultiIndex):
                         df.columns = df.columns.get_level_values(0)
@@ -80,6 +82,44 @@ def fetch_prices(ticker: str, period: str = "60d") -> pd.DataFrame:
             if attempt < FETCH_RETRIES:
                 time.sleep(FETCH_RETRY_DELAY)
     raise RuntimeError(f"Не удалось получить данные {ticker}: {last_error}")
+
+
+# Таймфреймы для графиков: какой интервал просить у Yahoo и сколько истории.
+# 4ч Yahoo не отдаёт — собирается из часовых свечей (resample).
+# Алерты, дайджест и статистика всегда работают по дневному ("Д").
+TIMEFRAMES = {
+    "15м": {"interval": "15m", "period": "5d"},
+    "30м": {"interval": "30m", "period": "10d"},
+    "1ч": {"interval": "1h", "period": "10d"},
+    "4ч": {"interval": "1h", "period": "30d", "resample": "4h"},
+    "Д": {"interval": "1d", "period": "60d"},
+    "Н": {"interval": "1wk", "period": "2y"},
+}
+DEFAULT_TIMEFRAME = "Д"
+CHART_CANDLES = 80  # сколько последних свечей отдавать на график
+
+TIMEFRAME_TITLES = {
+    "15м": "свечи 15 минут",
+    "30м": "свечи 30 минут",
+    "1ч": "часовые свечи",
+    "4ч": "4-часовые свечи",
+    "Д": "дневные свечи",
+    "Н": "недельные свечи",
+}
+
+
+def fetch_timeframe(ticker: str, tf: str = DEFAULT_TIMEFRAME) -> pd.DataFrame:
+    """OHLC в выбранном таймфрейме, обрезанный до последних CHART_CANDLES свечей.
+    Уровни Фибоначчи дальше считаются по последним 60 свечам этого таймфрейма."""
+    cfg = TIMEFRAMES[tf]
+    df = fetch_prices(ticker, period=cfg["period"], interval=cfg["interval"])
+    if "resample" in cfg:
+        df = (
+            df.resample(cfg["resample"])
+            .agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"})
+            .dropna()
+        )
+    return df.tail(CHART_CANDLES)
 
 
 FIB_RATIOS = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]

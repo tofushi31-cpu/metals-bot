@@ -16,11 +16,11 @@ TERMINAL_SEARCH = {
 }
 
 
-def format_metal_caption(name: str, z: dict) -> str:
+def format_metal_caption(name: str, z: dict, tf_label: str = "дневные свечи") -> str:
     """Подпись к графику (HTML): жирный заголовок, уровни ровным столбиком."""
     lines = [
-        f"<b>{name}</b> — цена <b>{z['current_price']}</b>",
-        f"Диапазон 60 дней: {z['low']}–{z['high']}",
+        f"<b>{name}</b> — цена <b>{z['current_price']}</b> · {tf_label}",
+        f"Диапазон последних 60 свечей: {z['low']}–{z['high']}",
         "",
     ]
     level_rows = []

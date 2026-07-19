@@ -46,12 +46,16 @@ from history import (
 )
 from signals import (
     ALGO_VERSION,
+    DEFAULT_TIMEFRAME,
     FIB_LABELS,
     METALS,
+    TIMEFRAME_TITLES,
+    TIMEFRAMES,
     close_price_after,
     compute_fib_zones,
     compute_indicators,
     fetch_prices,
+    fetch_timeframe,
 )
 
 load_dotenv()
@@ -149,7 +153,8 @@ def alert_menu(name: str) -> InlineKeyboardMarkup:
 HELP_TEXT = (
     "<b>📐 Уровни Фибоначчи</b>\n\n"
     "Уровни коррекции Фибоначчи — по максимуму и минимуму цены за последние "
-    "60 дней строится диапазон, внутри него отмечаются уровни:\n"
+    "60 свечей выбранного таймфрейма (для дневного — 60 дней) строится "
+    "диапазон, внутри него отмечаются уровни:\n"
     "  0% и 100% — сам максимум и минимум диапазона\n"
     "  23.6%, 38.2%, 50%, 78.6% — промежуточные уровни\n"
     "  61.8% — золотое сечение, обычно самый значимый уровень\n\n"
@@ -179,8 +184,10 @@ STATS_HELP_TEXT = (
 USAGE_TEXT = (
     "<b>🤖 Как пользоваться ботом</b>\n\n"
     "<b>📊 Графики</b> — свечной график любого инструмента с уровнями Фибоначчи "
-    "и RSI, в подписи — все уровни и ближайший к цене. Таймфрейм дневной: "
-    "одна свеча = один торговый день, на графике последние 60 дней.\n\n"
+    "и RSI, в подписи — все уровни и ближайший к цене. Под графиком — кнопки "
+    "таймфреймов: от 15 минут до недели, по умолчанию дневной. Уровни "
+    "пересчитываются под выбранный таймфрейм.\n\n"
+    "Алерты, дайджест и статистика всегда считаются по дневному таймфрейму.\n\n"
     "<b>📈 Статистика</b> — как отрабатывали прошлые сигналы (см. раздел "
     "«Как читать статистику»).\n\n"
     "Каждое утро бот сам присылает дайджест — графики всех инструментов. "
@@ -205,23 +212,40 @@ stats_help_button = InlineKeyboardMarkup(
 )
 
 
-async def send_metal(chat_id: int, name: str):
+def tf_menu(name: str, current: str) -> InlineKeyboardMarkup:
+    """Кнопки таймфреймов под графиком; текущий помечен точкой."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"• {tf}" if tf == current else tf,
+                    callback_data=f"tf:{name}:{tf}",
+                )
+                for tf in TIMEFRAMES
+            ]
+        ]
+    )
+
+
+async def send_metal(chat_id: int, name: str, tf: str = DEFAULT_TIMEFRAME):
     ticker = METALS[name]
     try:
-        df = await asyncio.to_thread(fetch_prices, ticker)
+        df = await asyncio.to_thread(fetch_timeframe, ticker, tf)
     except Exception:
-        logging.exception("Не удалось получить данные для %s", name)
+        logging.exception("Не удалось получить данные для %s (%s)", name, tf)
         await bot.send_message(chat_id, f"{name}: данные сейчас недоступны, попробуй позже.")
         return
     zones = compute_fib_zones(df)
+    tf_label = TIMEFRAME_TITLES[tf]
     with tempfile.TemporaryDirectory() as tmp_dir:
         path = os.path.join(tmp_dir, "chart.png")
-        render_chart(df, zones, name, path)
+        render_chart(df, zones, name, path, tf_label=tf_label)
         await bot.send_photo(
             chat_id,
             FSInputFile(path),
-            caption=format_metal_caption(name, zones),
+            caption=format_metal_caption(name, zones, tf_label),
             parse_mode="HTML",
+            reply_markup=tf_menu(name, tf),
         )
 
 
@@ -408,6 +432,17 @@ async def cb_metal_one(callback: CallbackQuery):
         return
     await ack(callback, "Собираю график...")
     await send_metal(callback.message.chat.id, name)
+
+
+@dp.callback_query(lambda c: c.data.startswith("tf:"))
+async def cb_timeframe(callback: CallbackQuery):
+    if not has_access(callback.from_user.id):
+        return
+    _, name, tf = callback.data.split(":", 2)
+    if name not in METALS or tf not in TIMEFRAMES:
+        return
+    await ack(callback, "Собираю график...")
+    await send_metal(callback.message.chat.id, name, tf)
 
 
 @dp.message(Command("stats"))
