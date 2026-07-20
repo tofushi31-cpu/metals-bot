@@ -37,7 +37,9 @@ FETCH_RETRY_DELAY = 2  # секунд между попытками
 # алгоритма статистика старой и новой версий не смешивалась.
 # v2: к зоне Фибоначчи добавлен поиск дивергенций RSI/цена.
 # v3: минимальное расстояние между переломами для дивергенции — 14 свечей вместо 5.
-ALGO_VERSION = 3
+# v4: окно сетки Фибоначчи на внутридневных таймфреймах увеличено (было 60 свечей
+# на всех — на 15м это меньше суток; теперь 200/200/150/90 под 15м/30м/1ч/4ч).
+ALGO_VERSION = 4
 
 # Кэш скачанных цен по (тикер, период): дайджест на N подписчиков и алерт-цикл
 # не должны ходить в Yahoo каждый раз — иначе лимиты и временные баны
@@ -86,19 +88,21 @@ def fetch_prices(ticker: str, period: str = "60d", interval: str = "1d") -> pd.D
     raise RuntimeError(f"Не удалось получить данные {ticker}: {last_error}")
 
 
-# Таймфреймы для графиков: какой интервал просить у Yahoo и сколько истории.
-# 4ч Yahoo не отдаёт — собирается из часовых свечей (resample).
+# Таймфреймы для графиков: какой интервал просить у Yahoo, сколько истории
+# качать и сколько последних свечей показывать (= окно для сетки Фибоначчи —
+# при фиксированных 60 свечах на всех таймфреймах внутридневная сетка строилась
+# по окну короче суток; теперь окно scaled под таймфрейм, чтобы захватывать
+# реально значимый свинг. 4ч Yahoo не отдаёт — собирается из часовых (resample).
 # Алерты, дайджест и статистика всегда работают по дневному ("Д").
 TIMEFRAMES = {
-    "15м": {"interval": "15m", "period": "5d"},
-    "30м": {"interval": "30m", "period": "10d"},
-    "1ч": {"interval": "1h", "period": "10d"},
-    "4ч": {"interval": "1h", "period": "30d", "resample": "4h"},
-    "Д": {"interval": "1d", "period": "60d"},
-    "Н": {"interval": "1wk", "period": "2y"},
+    "15м": {"interval": "15m", "period": "5d", "candles": 200},   # ~2 торговых дня
+    "30м": {"interval": "30m", "period": "10d", "candles": 200},  # ~4 дня
+    "1ч": {"interval": "1h", "period": "10d", "candles": 150},    # ~6 дней
+    "4ч": {"interval": "1h", "period": "30d", "resample": "4h", "candles": 90},  # ~15 дней
+    "Д": {"interval": "1d", "period": "60d", "candles": 60},      # ~2 месяца
+    "Н": {"interval": "1wk", "period": "2y", "candles": 60},      # ~14 месяцев
 }
 DEFAULT_TIMEFRAME = "Д"
-CHART_CANDLES = 80  # сколько последних свечей отдавать на график
 
 TIMEFRAME_TITLES = {
     "15м": "свечи 15 минут",
@@ -111,8 +115,9 @@ TIMEFRAME_TITLES = {
 
 
 def fetch_timeframe(ticker: str, tf: str = DEFAULT_TIMEFRAME) -> pd.DataFrame:
-    """OHLC в выбранном таймфрейме, обрезанный до последних CHART_CANDLES свечей.
-    Уровни Фибоначчи дальше считаются по последним 60 свечам этого таймфрейма."""
+    """OHLC в выбранном таймфрейме, обрезанный до последних N свечей (N — своё
+    для каждого таймфрейма, см. TIMEFRAMES). Уровни Фибоначчи считаются по
+    всему этому окну — оно и есть окно свинга для сетки."""
     cfg = TIMEFRAMES[tf]
     df = fetch_prices(ticker, period=cfg["period"], interval=cfg["interval"])
     if "resample" in cfg:
@@ -121,7 +126,7 @@ def fetch_timeframe(ticker: str, tf: str = DEFAULT_TIMEFRAME) -> pd.DataFrame:
             .agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"})
             .dropna()
         )
-    return df.tail(CHART_CANDLES)
+    return df.tail(cfg["candles"])
 
 
 FIB_RATIOS = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]

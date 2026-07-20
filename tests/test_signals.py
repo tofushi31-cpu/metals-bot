@@ -146,7 +146,7 @@ def test_fetch_timeframe_trims_to_chart_candles(monkeypatch):
 
     df = signals.fetch_timeframe("GC=F", "15м")
 
-    assert len(df) == signals.CHART_CANDLES
+    assert len(df) == signals.TIMEFRAMES["15м"]["candles"]
 
 
 def test_market_is_paused():

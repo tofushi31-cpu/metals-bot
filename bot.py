@@ -159,9 +159,10 @@ def alert_menu(name: str) -> InlineKeyboardMarkup:
 
 HELP_TEXT = (
     "<b>📐 Уровни Фибоначчи</b>\n\n"
-    "Уровни коррекции Фибоначчи — по максимуму и минимуму цены за последние "
-    "60 свечей выбранного таймфрейма (для дневного — 60 дней) строится "
-    "диапазон, внутри него отмечаются уровни:\n"
+    "Уровни коррекции Фибоначчи — по максимуму и минимуму цены за последнее "
+    "окно свечей выбранного таймфрейма строится диапазон (окно своё под каждый "
+    "таймфрейм — от ~2 дней на 15м/30м до ~2 месяцев на дневном и года на "
+    "недельном), внутри него отмечаются уровни:\n"
     "  0% и 100% — сам максимум и минимум диапазона\n"
     "  23.6%, 38.2%, 50%, 78.6% — промежуточные уровни\n"
     "  61.8% — золотое сечение, обычно самый значимый уровень\n\n"
@@ -251,7 +252,7 @@ async def send_metal(chat_id: int, name: str, tf: str = DEFAULT_TIMEFRAME):
         logging.exception("Не удалось получить данные для %s (%s)", name, tf)
         await bot.send_message(chat_id, f"{name}: данные сейчас недоступны, попробуй позже.")
         return
-    zones = compute_fib_zones(df)
+    zones = compute_fib_zones(df, lookback=len(df))  # окно уже подобрано под tf в fetch_timeframe
     tf_label = TIMEFRAME_TITLES[tf]
     paused = market_is_paused(df, tf)
     divergences = find_divergences(df)
@@ -261,7 +262,7 @@ async def send_metal(chat_id: int, name: str, tf: str = DEFAULT_TIMEFRAME):
         await bot.send_photo(
             chat_id,
             FSInputFile(path),
-            caption=format_metal_caption(name, zones, tf_label, paused, divergences),
+            caption=format_metal_caption(name, zones, tf_label, paused, divergences, candles=len(df)),
             parse_mode="HTML",
             reply_markup=tf_menu(name, tf),
         )

@@ -36,11 +36,12 @@ def format_metal_caption(
     tf_label: str = "дневные свечи",
     paused: bool = False,
     divergences: list[dict] | None = None,
+    candles: int = 60,
 ) -> str:
     """Подпись к графику (HTML): жирный заголовок, уровни ровным столбиком."""
     lines = [
         f"<b>{name}</b> — цена <b>{z['current_price']}</b> · {tf_label}",
-        f"Диапазон последних 60 свечей: {z['low']}–{z['high']}",
+        f"Диапазон последних {candles} свечей: {z['low']}–{z['high']}",
         "",
     ]
     if paused:
