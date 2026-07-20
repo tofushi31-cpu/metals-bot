@@ -21,6 +21,11 @@ HEADER = ["Дата и время", "Инструмент", "Уровень Фи
 SUBS_SHEET = "Подписчики"
 SUBS_HEADER = ["Дата и время", "Событие", "Пользователь", "Дней", "Действует до"]
 
+# gspread по умолчанию не ограничивает время ответа Google — при сетевой
+# нестабильности запрос может зависнуть навсегда, а это блокирует завершение
+# всего процесса (asyncio ждёт этот поток при выключении). Жёсткий потолок.
+REQUEST_TIMEOUT_SEC = 20
+
 _worksheet = None
 _subs_worksheet = None
 
@@ -31,6 +36,7 @@ def _book():
     import gspread
 
     client = gspread.service_account(filename=os.getenv("GSHEET_CREDS"))
+    client.set_timeout(REQUEST_TIMEOUT_SEC)
     return client.open_by_key(os.getenv("GSHEET_ID"))
 
 
