@@ -71,7 +71,11 @@ ALERT_INTERVAL_MIN = int(os.getenv("ALERT_INTERVAL_MIN", "30"))  # как час
 STARS_PRICE = int(os.getenv("STARS_PRICE", "100"))  # цена подписки в Telegram Stars
 SUB_DAYS = int(os.getenv("SUB_DAYS", "30"))  # длительность подписки в днях
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s:%(name)s:%(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
